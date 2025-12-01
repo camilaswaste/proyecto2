@@ -17,21 +17,17 @@ export async function POST(request: NextRequest) {
       .input("email", sql.NVarChar, email)
       .query(`
         SELECT u.UsuarioID, u.NombreUsuario, u.Email, u.PasswordHash, 
-               u.Nombre, u.Apellido, u.Activo, u.RequiereCambioPassword, r.NombreRol, r.RolID
+               u.Nombre, u.Apellido, u.Activo, u.RequiereCambioPassword, 
+               r.NombreRol, r.RolID,
+               e.EntrenadorID
         FROM Usuarios u
         INNER JOIN Roles r ON u.RolID = r.RolID
+        LEFT JOIN Entrenadores e ON u.UsuarioID = e.UsuarioID
         WHERE u.Email = @email AND u.Activo = 1
       `)
 
     if (usuarioResult.recordset.length > 0) {
       const user = usuarioResult.recordset[0]
-
-      console.log("Usuario encontrado:", {
-        usuarioID: user.UsuarioID,
-        email: user.Email,
-        rol: user.NombreRol,
-        requiereCambioPassword: user.RequiereCambioPassword,
-      })
 
       const isValidPassword = await verifyPassword(password, user.PasswordHash)
 
@@ -44,29 +40,42 @@ export async function POST(request: NextRequest) {
         .input("usuarioID", sql.Int, user.UsuarioID)
         .query("UPDATE Usuarios SET UltimoAcceso = GETDATE() WHERE UsuarioID = @usuarioID")
 
-      const token = generateToken({
+      const tokenPayload: any = {
         usuarioID: user.UsuarioID,
         nombreUsuario: user.NombreUsuario,
         email: user.Email,
         rol: user.NombreRol,
         rolID: user.RolID,
-      })
+      }
+
+      if (user.EntrenadorID) {
+        tokenPayload.entrenadorID = user.EntrenadorID
+      }
+
+      const token = generateToken(tokenPayload)
+
+      const userResponse: any = {
+        usuarioID: user.UsuarioID,
+        nombreUsuario: user.NombreUsuario,
+        email: user.Email,
+        nombre: user.Nombre,
+        apellido: user.Apellido,
+        rol: user.NombreRol,
+        rolID: user.RolID,
+        requiereCambioPassword: user.RequiereCambioPassword || false,
+      }
+
+      if (user.EntrenadorID) {
+        userResponse.entrenadorID = user.EntrenadorID
+      }
 
       return NextResponse.json({
         token,
-        user: {
-          usuarioID: user.UsuarioID,
-          nombreUsuario: user.NombreUsuario,
-          email: user.Email,
-          nombre: user.Nombre,
-          apellido: user.Apellido,
-          rol: user.NombreRol,
-          rolID: user.RolID,
-          requiereCambioPassword: user.RequiereCambioPassword || false,
-        },
+        user: userResponse,
       })
     }
 
+    // No usuario found, checking Socios table
     const socioResult = await pool
       .request()
       .input("email", sql.NVarChar, email)
@@ -81,12 +90,6 @@ export async function POST(request: NextRequest) {
     }
 
     const socio = socioResult.recordset[0]
-
-    console.log("Socio encontrado:", {
-      socioID: socio.SocioID,
-      email: socio.Email,
-      requiereCambioPassword: socio.RequiereCambioPassword,
-    })
 
     const isValidPassword = await verifyPassword(password, socio.PasswordHash)
 

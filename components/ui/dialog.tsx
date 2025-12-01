@@ -1,8 +1,8 @@
 "use client"
 
-import * as React from "react"
-import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { X } from "lucide-react"
+import * as React from "react"
 
 interface DialogProps {
   open: boolean
@@ -60,6 +60,30 @@ export function DialogTitle({
   className?: string
 }) {
   return <h2 className={cn("text-xl font-semibold", className)}>{children}</h2>
+}
+
+export function DialogDescription({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return <p className={cn("text-sm text-muted-foreground mt-2", className)}>{children}</p>
+}
+
+export function DialogFooter({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 mt-6", className)}>
+      {children}
+    </div>
+  )
 }
 
 export function DialogClose({ onClose }: { onClose: () => void }) {

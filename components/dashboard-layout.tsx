@@ -1,30 +1,31 @@
 "use client"
 
+import { CalendarCheck, RefreshCw } from "lucide-react"
 import type React from "react"
-import { RefreshCw } from "lucide-react"
 
-import { useState, useEffect } from "react"
-import { useRouter, usePathname } from "next/navigation"
-import Link from "next/link"
+import { NotificationsDropdown } from "@/components/notifications-dropdown"
 import { Button } from "@/components/ui/button"
+import type { User as UserType } from "@/lib/auth-client"
+import { getUser, logout } from "@/lib/auth-client"
 import {
+  BarChart3,
+  Calendar,
+  Clock,
+  CreditCard,
   Dumbbell,
   LayoutDashboard,
-  Users,
-  CreditCard,
-  Calendar,
-  Package,
-  BarChart3,
-  User,
-  Settings,
   LogOut,
   Menu,
-  X,
+  Package,
+  Settings,
+  User,
   UserCircle,
-  Clock,
+  Users,
+  X,
 } from "lucide-react"
-import { getUser, logout } from "@/lib/auth-client"
-import type { User as UserType } from "@/lib/auth-client"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -74,6 +75,7 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: Package, label: "Inventario", href: `${basePrefix}/inventario` },
         { icon: Calendar, label: "Clases", href: `${basePrefix}/clases` },
         { icon: Clock, label: "Cronograma", href: `${basePrefix}/cronograma` },
+        { icon: UserCircle, label: "Recepción", href: `${basePrefix}/recepcion` },
         { icon: RefreshCw, label: "Sincronización", href: `${basePrefix}/sync` },
         { icon: BarChart3, label: "KPIs", href: `${basePrefix}/kpis` },
       ]
@@ -83,12 +85,15 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: Users, label: "Socios", href: `${basePrefix}/socios` },
         { icon: Calendar, label: "Mis Clases", href: `${basePrefix}/clases` },
         { icon: Clock, label: "Horario", href: `${basePrefix}/horario` },
+        { icon: CalendarCheck, label: "Mis Sesiones", href: `${basePrefix}/sesiones` },
+        { icon: RefreshCw, label: "Gestión Horario", href: `${basePrefix}/gestion-horario` },
       ]
     } else {
       return [
         { icon: LayoutDashboard, label: "Dashboard", href: `${basePrefix}/dashboard` },
         { icon: CreditCard, label: "Mi Membresía", href: `${basePrefix}/membresia` },
         { icon: Calendar, label: "Clases", href: `${basePrefix}/clases` },
+        { icon: CalendarCheck, label: "Mis Sesiones", href: `${basePrefix}/sesiones` },
         { icon: UserCircle, label: "Entrenadores", href: `${basePrefix}/entrenadores` },
         { icon: CreditCard, label: "Pagos", href: `${basePrefix}/pagos` },
       ]
@@ -180,7 +185,11 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
               <Menu className="h-5 w-5" />
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
+              <NotificationsDropdown
+                tipoUsuario={role === "Administrador" ? "Admin" : role}
+                usuarioID={role === "Administrador" ? undefined : user.entrenadorID || user.socioID}
+              />
               <span className="text-sm font-medium">
                 {user.nombre} {user.apellido}
               </span>

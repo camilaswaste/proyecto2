@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
+import { crearNotificacion } from "@/lib/notifications"
+import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
@@ -86,6 +87,32 @@ export async function POST(request: Request) {
 
     const pool = await getConnection()
 
+    for (const dia of DiasSemana) {
+      const conflictoClase = await pool
+        .request()
+        .input("DiaSemana", dia)
+        .input("HoraInicio", HoraInicio)
+        .input("HoraFin", HoraFin)
+        .query(`
+          SELECT COUNT(*) as Conflictos
+          FROM Clases
+          WHERE DiaSemana = @DiaSemana
+            AND Activa = 1
+            AND (
+              (@HoraInicio >= HoraInicio AND @HoraInicio < HoraFin) OR
+              (@HoraFin > HoraInicio AND @HoraFin <= HoraFin) OR
+              (@HoraInicio <= HoraInicio AND @HoraFin >= HoraFin)
+            )
+        `)
+
+      if (conflictoClase.recordset[0].Conflictos > 0) {
+        return NextResponse.json(
+          { error: `Ya existe una clase grupal el ${dia} en ese horario. No se pueden tener dos clases simultáneas.` },
+          { status: 409 },
+        )
+      }
+    }
+
     let fechaFin = null
     if (TipoClase === "Temporal" && NumeroSemanas && FechaInicio) {
       const startDate = new Date(FechaInicio)
@@ -136,6 +163,26 @@ export async function POST(request: Request) {
             VALUES (@NombreClase, @Descripcion, @EntrenadorID, @DiaSemana, @HoraInicio, @HoraFin, @CupoMaximo, 1)
           `)
       }
+    }
+
+    try {
+      await crearNotificacion({
+        tipoUsuario: "Entrenador",
+        usuarioID: EntrenadorID,
+        tipoEvento: "clase_creada",
+        titulo: "Nueva clase grupal asignada",
+        mensaje: `El administrador ha creado la clase "${NombreClase}" que impartirás los días ${DiasSemana.join(", ")} de ${HoraInicio} a ${HoraFin}.`,
+      })
+
+      await crearNotificacion({
+        tipoUsuario: "Admin",
+        usuarioID: undefined,
+        tipoEvento: "clase_creada",
+        titulo: "Clase grupal creada",
+        mensaje: `Se ha creado la clase "${NombreClase}" para ${DiasSemana.join(", ")} de ${HoraInicio} a ${HoraFin}.`,
+      })
+    } catch (notifError) {
+      console.error("[v0] Error al enviar notificaciones (no crítico):", notifError)
     }
 
     return NextResponse.json({ message: "Clase(s) creada(s) exitosamente" }, { status: 201 })
@@ -257,14 +304,74 @@ export async function DELETE(request: Request) {
 
     const pool = await getConnection()
 
+    const claseInfo = await pool
+      .request()
+      .input("ClaseID", id)
+      .query(`
+        SELECT c.NombreClase, c.DiaSemana, c.HoraInicio, c.HoraFin, c.EntrenadorID,
+               u.Nombre + ' ' + u.Apellido as NombreEntrenador
+        FROM Clases c
+        INNER JOIN Entrenadores e ON c.EntrenadorID = e.EntrenadorID
+        INNER JOIN Usuarios u ON e.UsuarioID = u.UsuarioID
+        WHERE c.ClaseID = @ClaseID
+      `)
+
+    const clase = claseInfo.recordset[0]
+
+    const sociosInscritos = await pool
+      .request()
+      .input("ClaseID", id)
+      .query(`
+        SELECT DISTINCT SocioID
+        FROM ReservasClases
+        WHERE ClaseID = @ClaseID
+      `)
+
     await pool
       .request()
       .input("ClaseID", id)
       .query(`
-        UPDATE Clases
-        SET Activa = 0
+        DELETE FROM ReservasClases
         WHERE ClaseID = @ClaseID
       `)
+
+    await pool
+      .request()
+      .input("ClaseID", id)
+      .query(`
+        DELETE FROM Clases
+        WHERE ClaseID = @ClaseID
+      `)
+
+    try {
+      await crearNotificacion({
+        tipoUsuario: "Entrenador",
+        usuarioID: clase.EntrenadorID,
+        tipoEvento: "clase_eliminada",
+        titulo: "Clase grupal eliminada",
+        mensaje: `El administrador ha eliminado la clase "${clase.NombreClase}" del ${clase.DiaSemana} de ${clase.HoraInicio} a ${clase.HoraFin}.`,
+      })
+
+      for (const socio of sociosInscritos.recordset) {
+        await crearNotificacion({
+          tipoUsuario: "Socio",
+          usuarioID: socio.SocioID,
+          tipoEvento: "clase_eliminada",
+          titulo: "Clase cancelada",
+          mensaje: `Se ha eliminado la clase "${clase.NombreClase}" en la que estabas inscrito.`,
+        })
+      }
+
+      await crearNotificacion({
+        tipoUsuario: "Admin",
+        usuarioID: undefined,
+        tipoEvento: "clase_eliminada",
+        titulo: "Clase grupal eliminada",
+        mensaje: `${clase.NombreEntrenador} ha eliminado la clase "${clase.NombreClase}" del ${clase.DiaSemana}.`,
+      })
+    } catch (notifError) {
+      console.error("[v0] Error al enviar notificaciones (no crítico):", notifError)
+    }
 
     return NextResponse.json({ message: "Clase eliminada exitosamente" })
   } catch (error) {

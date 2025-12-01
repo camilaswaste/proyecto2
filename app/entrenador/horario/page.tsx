@@ -1,58 +1,96 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { getUser } from "@/lib/auth-client"
+import { Calendar, ChevronLeft, ChevronRight } from "lucide-react"
+import { useEffect, useState } from "react"
+
+interface Clase {
+  ClaseID: number
+  NombreClase: string
+  DiaSemana: string
+  HoraInicio: string
+  HoraFin: string
+  CupoMaximo: number
+  Inscritos: number
+  TipoSesion: string
+}
 
 interface Sesion {
-  SesionID?: number
-  ClaseID?: number
+  SesionID: number
   FechaSesion: string
   HoraInicio: string
   HoraFin: string
   Estado: string
-  NombreSocio?: string
-  NombreClase?: string
+  NombreSocio: string
   TipoSesion: string
-  CupoDisponible?: number
+}
+
+interface Recepcion {
+  HorarioRecepcionID: number
+  DiaSemana: string
+  HoraInicio: string
+  HoraFin: string
 }
 
 export default function EntrenadorHorarioPage() {
-  const [currentWeekStart, setCurrentWeekStart] = useState(new Date())
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [clases, setClases] = useState<Clase[]>([])
   const [sesiones, setSesiones] = useState<Sesion[]>([])
+  const [recepcion, setRecepcion] = useState<Recepcion[]>([])
   const [loading, setLoading] = useState(true)
+  const [mostrarClases, setMostrarClases] = useState(true)
+  const [mostrarSesiones, setMostrarSesiones] = useState(true)
+  const [mostrarRecepcion, setMostrarRecepcion] = useState(true)
 
   useEffect(() => {
-    const fetchHorario = async () => {
-      try {
-        const user = getUser()
-        if (!user?.entrenadorID) return
+    fetchHorario()
+  }, [currentDate])
 
-        const fecha = currentWeekStart.toISOString().split("T")[0]
-        const response = await fetch(`/api/entrenador/horario?entrenadorID=${user.entrenadorID}&fecha=${fecha}`)
-        if (response.ok) {
-          const data = await response.json()
-          const allSesiones = [...data.sesionesPersonales, ...data.clasesGrupales]
-          setSesiones(allSesiones)
-        }
-      } catch (error) {
-        console.error("Error al cargar horario:", error)
-      } finally {
-        setLoading(false)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchHorario()
       }
     }
-    fetchHorario()
-  }, [currentWeekStart])
 
-  // Helper functions
-  const getWeekDates = (startDate: Date) => {
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [currentDate])
+
+  const fetchHorario = async () => {
+    try {
+      const user = getUser()
+      if (!user?.entrenadorID) {
+        console.error("No hay entrenadorID en el usuario")
+        return
+      }
+
+      const fecha = currentDate.toISOString().split("T")[0]
+
+      const response = await fetch(`/api/entrenador/horario?entrenadorId=${user.entrenadorID}&startDate=${fecha}`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setClases(data.clases || [])
+        setSesiones(data.sesiones || [])
+        setRecepcion(data.recepcion || [])
+      }
+    } catch (error) {
+      console.error("Error al cargar horario:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getWeekDates = () => {
+    const start = new Date(currentDate)
+    start.setDate(start.getDate() - start.getDay() + 1)
     const dates = []
-    const start = new Date(startDate)
-    start.setDate(start.getDate() - start.getDay() + 1) // Start from Monday
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
       const date = new Date(start)
       date.setDate(start.getDate() + i)
       dates.push(date)
@@ -60,45 +98,84 @@ export default function EntrenadorHorarioPage() {
     return dates
   }
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString("es-CL", { day: "numeric", month: "short" })
-  }
+  const weekDates = getWeekDates()
+  const diasSemana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-  const formatWeekRange = (startDate: Date) => {
-    const start = new Date(startDate)
-    start.setDate(start.getDate() - start.getDay() + 1)
-    const endDate = new Date(start)
-    endDate.setDate(start.getDate() + 4)
-    return `${formatDate(start)} - ${formatDate(endDate)}`
-  }
+  const getEventosForDay = (dia: string, diaIndex: number) => {
+    const eventos: Array<{
+      tipo: string
+      nombre: string
+      detalles: string
+      horaInicio: string
+      horaFin: string
+    }> = []
 
-  const goToPreviousWeek = () => {
-    const newDate = new Date(currentWeekStart)
-    newDate.setDate(currentWeekStart.getDate() - 7)
-    setCurrentWeekStart(newDate)
-  }
+    if (mostrarRecepcion) {
+      const recepcionDelDia = recepcion.filter((r) => r.DiaSemana === dia)
 
-  const goToNextWeek = () => {
-    const newDate = new Date(currentWeekStart)
-    newDate.setDate(currentWeekStart.getDate() + 7)
-    setCurrentWeekStart(newDate)
-  }
-
-  const weekDates = getWeekDates(currentWeekStart)
-  const dayNames = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
-  const timeSlots = Array.from({ length: 14 }, (_, i) => `${7 + i}:00`)
-
-  // Build schedule from sesiones
-  const schedule: Record<string, Record<string, Sesion>> = {}
-  sesiones.forEach((sesion) => {
-    const fecha = new Date(sesion.FechaSesion)
-    const dayIndex = fecha.getDay() - 1 // Monday = 0
-    if (dayIndex >= 0 && dayIndex < 5) {
-      const hora = sesion.HoraInicio.substring(0, 5)
-      if (!schedule[dayIndex]) schedule[dayIndex] = {}
-      schedule[dayIndex][hora] = sesion
+      recepcionDelDia.forEach((r) => {
+        eventos.push({
+          tipo: "recepcion",
+          nombre: "Recepción",
+          detalles: "Atención en recepción",
+          horaInicio: r.HoraInicio,
+          horaFin: r.HoraFin,
+        })
+      })
     }
-  })
+
+    if (mostrarClases) {
+      const clasesDelDia = clases.filter((clase) => clase.DiaSemana === dia)
+
+      clasesDelDia.forEach((clase) => {
+        eventos.push({
+          tipo: "clase",
+          nombre: clase.NombreClase,
+          detalles: `${clase.Inscritos}/${clase.CupoMaximo} inscritos`,
+          horaInicio: clase.HoraInicio,
+          horaFin: clase.HoraFin,
+        })
+      })
+    }
+
+    const fechaDia = weekDates[diaIndex]
+    const fechaDiaStr = `${fechaDia.getFullYear()}-${String(fechaDia.getMonth() + 1).padStart(2, "0")}-${String(fechaDia.getDate()).padStart(2, "0")}`
+
+    if (mostrarSesiones) {
+      const sesionesDelDia = sesiones.filter((sesion) => {
+        const fechaSesionStr = sesion.FechaSesion.split("T")[0]
+        return fechaSesionStr === fechaDiaStr
+      })
+
+      sesionesDelDia.forEach((sesion) => {
+        eventos.push({
+          tipo: "sesion",
+          nombre: "Sesión Personal",
+          detalles: sesion.NombreSocio,
+          horaInicio: sesion.HoraInicio,
+          horaFin: sesion.HoraFin,
+        })
+      })
+    }
+
+    return eventos.sort((a, b) => a.horaInicio.localeCompare(b.horaInicio))
+  }
+
+  const navigateWeek = (direction: number) => {
+    const newDate = new Date(currentDate)
+    newDate.setDate(newDate.getDate() + direction * 7)
+    setCurrentDate(newDate)
+  }
+
+  const goToToday = () => {
+    setCurrentDate(new Date())
+  }
+
+  const formatWeekRange = () => {
+    const start = weekDates[0]
+    const end = weekDates[weekDates.length - 1]
+    return `${start.getDate()} ${start.toLocaleDateString("es-ES", { month: "short" })} - ${end.getDate()} ${end.toLocaleDateString("es-ES", { month: "short", year: "numeric" })}`
+  }
 
   if (loading) {
     return (
@@ -118,78 +195,107 @@ export default function EntrenadorHorarioPage() {
             <h1 className="text-3xl font-bold">Mi Horario</h1>
             <p className="text-muted-foreground">Visualiza tu agenda semanal</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={goToPreviousWeek}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-medium min-w-[200px] text-center">{formatWeekRange(currentWeekStart)}</span>
-            <Button variant="outline" size="icon" onClick={goToNextWeek}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button onClick={goToToday} variant="outline">
+            <Calendar className="h-4 w-4 mr-2" />
+            Hoy
+          </Button>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Semana del {formatWeekRange(currentWeekStart)}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Semana del {formatWeekRange()}</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="icon" onClick={() => navigateWeek(-1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" onClick={() => navigateWeek(1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <div className="min-w-[800px]">
-                {/* Header with days */}
-                <div className="grid grid-cols-6 gap-2 mb-2">
-                  <div className="font-medium text-sm text-muted-foreground p-2">Hora</div>
-                  {dayNames.map((day, index) => (
-                    <div key={day} className="font-medium text-sm text-center p-2 bg-muted rounded-lg">
-                      <div>{day}</div>
-                      <div className="text-xs text-muted-foreground">{formatDate(weekDates[index])}</div>
-                    </div>
-                  ))}
-                </div>
+              <div className="grid grid-cols-7 gap-3">
+                {diasSemana.map((dia, index) => {
+                  const eventos = getEventosForDay(dia, index)
+                  const isToday = weekDates[index].toDateString() === new Date().toDateString()
 
-                {/* Time slots grid */}
-                <div className="space-y-1">
-                  {timeSlots.map((time) => (
-                    <div key={time} className="grid grid-cols-6 gap-2">
-                      <div className="text-sm font-medium text-muted-foreground p-2 flex items-center">{time}</div>
-                      {dayNames.map((_, dayIndex) => {
-                        const event = schedule[dayIndex]?.[time]
-                        return (
-                          <div key={dayIndex} className="min-h-[60px] border rounded-lg p-2 hover:bg-muted/50">
-                            {event && (
-                              <div
-                                className={`h-full rounded p-2 text-xs ${
-                                  event.TipoSesion === "Personal"
-                                    ? "bg-primary/10 border border-primary/20"
-                                    : "bg-blue-50 border border-blue-200"
-                                }`}
-                              >
-                                <div className="font-medium">
-                                  {event.TipoSesion === "Personal" ? "Sesión Personal" : event.NombreClase}
-                                </div>
-                                {event.NombreSocio && (
-                                  <div className="text-muted-foreground mt-1">{event.NombreSocio}</div>
-                                )}
+                  return (
+                    <div key={dia} className={`border rounded-lg ${isToday ? "border-blue-500 border-2" : ""}`}>
+                      <div className={`p-3 text-center border-b ${isToday ? "bg-blue-50" : "bg-muted"}`}>
+                        <div className="font-medium">{dia}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {weekDates[index].getDate()}{" "}
+                          {weekDates[index].toLocaleDateString("es-ES", { month: "short" })}
+                        </div>
+                      </div>
+                      <div className="p-2 space-y-2 min-h-[400px]">
+                        {eventos.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">Sin eventos</p>
+                        ) : (
+                          eventos.map((evento, idx) => (
+                            <div
+                              key={idx}
+                              className={`text-xs p-2 rounded border ${
+                                evento.tipo === "recepcion"
+                                  ? "bg-red-50 border-red-300"
+                                  : evento.tipo === "clase"
+                                    ? "bg-blue-50 border-blue-200"
+                                    : "bg-green-50 border-green-200"
+                              }`}
+                            >
+                              <div className="font-semibold text-sm mb-1">{evento.nombre}</div>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                                <span className="font-medium">{evento.horaInicio}</span>
+                                <span>-</span>
+                                <span className="font-medium">{evento.horaFin}</span>
                               </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                              <div className="text-xs text-muted-foreground mt-1">{evento.detalles}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
             </div>
 
-            {/* Legend */}
-            <div className="flex items-center gap-4 mt-4 pt-4 border-t">
+            <div className="flex gap-6 mt-4 pt-4 border-t">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-primary/10 border border-primary/20" />
-                <span className="text-sm">Sesión Personal</span>
+                <Checkbox
+                  id="recepcion-entrenador"
+                  checked={mostrarRecepcion}
+                  onCheckedChange={(checked) => setMostrarRecepcion(checked === true)}
+                />
+                <label htmlFor="recepcion-entrenador" className="flex items-center gap-2 cursor-pointer">
+                  <div className="w-4 h-4 bg-red-50 border border-red-300 rounded"></div>
+                  <span className="text-sm">Recepción</span>
+                </label>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-blue-50 border border-blue-200" />
-                <span className="text-sm">Clase Grupal</span>
+                <Checkbox
+                  id="clases-grupales-entrenador"
+                  checked={mostrarClases}
+                  onCheckedChange={(checked) => setMostrarClases(checked === true)}
+                />
+                <label htmlFor="clases-grupales-entrenador" className="flex items-center gap-2 cursor-pointer">
+                  <div className="w-4 h-4 bg-blue-50 border border-blue-200 rounded"></div>
+                  <span className="text-sm">Clases Grupales</span>
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="sesiones-personales-entrenador"
+                  checked={mostrarSesiones}
+                  onCheckedChange={(checked) => setMostrarSesiones(checked === true)}
+                />
+                <label htmlFor="sesiones-personales-entrenador" className="flex items-center gap-2 cursor-pointer">
+                  <div className="w-4 h-4 bg-green-50 border border-green-200 rounded"></div>
+                  <span className="text-sm">Sesiones Personales</span>
+                </label>
               </div>
             </div>
           </CardContent>

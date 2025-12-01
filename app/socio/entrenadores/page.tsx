@@ -2,15 +2,15 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
-import { Calendar } from "lucide-react"
 import { getUser } from "@/lib/auth-client"
+import { Calendar } from "lucide-react"
+import { useEffect, useState } from "react"
 
 interface Entrenador {
   EntrenadorID: number
@@ -28,6 +28,8 @@ export default function SocioEntrenadoresPage() {
   const [showBookingDialog, setShowBookingDialog] = useState(false)
   const [bookingTrainer, setBookingTrainer] = useState<Entrenador | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [showConflictDialog, setShowConflictDialog] = useState(false)
+  const [conflictInfo, setConflictInfo] = useState<{ sessionCount: number; message: string } | null>(null)
   const [formData, setFormData] = useState({
     fechaSesion: "",
     horaInicio: "",
@@ -66,7 +68,7 @@ export default function SocioEntrenadoresPage() {
     setShowBookingDialog(true)
   }
 
-  const handleSubmitBooking = async (e: React.FormEvent) => {
+  const handleSubmitBooking = async (e: React.FormEvent, forceBooking = false) => {
     e.preventDefault()
     setSubmitting(true)
 
@@ -87,12 +89,25 @@ export default function SocioEntrenadoresPage() {
           socioID,
           entrenadorID: bookingTrainer.EntrenadorID,
           ...formData,
+          forceBooking, // Indicar si el usuario ya confirmó el conflicto
         }),
       })
+
+      const data = await response.json()
+
+      // Si hay una advertencia de conflicto, mostrar diálogo de confirmación
+      if (data.warning && !forceBooking) {
+        setConflictInfo({ sessionCount: data.sessionCount, message: data.message })
+        setShowConflictDialog(true)
+        setSubmitting(false)
+        return
+      }
 
       if (response.ok) {
         alert("Sesión agendada exitosamente")
         setShowBookingDialog(false)
+        setShowConflictDialog(false)
+        setConflictInfo(null)
         setFormData({
           fechaSesion: "",
           horaInicio: "",
@@ -100,8 +115,7 @@ export default function SocioEntrenadoresPage() {
           notas: "",
         })
       } else {
-        const error = await response.json()
-        alert(error.error || "Error al agendar sesión")
+        alert(data.error || "Error al agendar sesión")
       }
     } catch (error) {
       console.error("Error:", error)
@@ -109,6 +123,11 @@ export default function SocioEntrenadoresPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleConfirmBooking = async () => {
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    await handleSubmitBooking(fakeEvent, true)
   }
 
   if (loading) {
@@ -266,6 +285,38 @@ export default function SocioEntrenadoresPage() {
                 </Button>
               </div>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showConflictDialog} onOpenChange={setShowConflictDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Conflicto de Horario</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">{conflictInfo?.message}</p>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2 font-medium">
+                  ¿Desea agendar la sesión de igual manera?
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowConflictDialog(false)
+                    setConflictInfo(null)
+                  }}
+                  disabled={submitting}
+                >
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={handleConfirmBooking} disabled={submitting}>
+                  {submitting ? "Agendando..." : "Sí, Agendar de Todas Formas"}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

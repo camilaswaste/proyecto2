@@ -2,14 +2,15 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
-import { Plus, Search, Edit, Trash2 } from "lucide-react"
+import { formatPhone, validatePhone } from "@/lib/validations"
+import { Edit, Plus, Search, Trash2 } from "lucide-react"
+import { useEffect, useState } from "react"
 
 interface Entrenador {
   EntrenadorID: number
@@ -37,6 +38,7 @@ export default function AdminEntrenadoresPage() {
     certificaciones: "",
     biografia: "",
   })
+  const [phoneError, setPhoneError] = useState("")
 
   useEffect(() => {
     fetchEntrenadores()
@@ -57,6 +59,8 @@ export default function AdminEntrenadoresPage() {
   }
 
   const handleOpenDialog = (entrenador?: Entrenador) => {
+    setPhoneError("")
+
     if (entrenador) {
       setEditingEntrenador(entrenador)
       setFormData({
@@ -83,8 +87,28 @@ export default function AdminEntrenadoresPage() {
     setShowDialog(true)
   }
 
+  const handlePhoneChange = (value: string) => {
+    const formatted = formatPhone(value)
+    setFormData({ ...formData, telefono: formatted })
+
+    if (formatted.length > 0 && formatted.length >= 17) {
+      if (!validatePhone(formatted)) {
+        setPhoneError("Teléfono inválido. Formato: (+56) 9 xxxx xxxx")
+      } else {
+        setPhoneError("")
+      }
+    } else {
+      setPhoneError("")
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (formData.telefono && !validatePhone(formData.telefono)) {
+      alert("Por favor ingresa un teléfono válido en formato (+56) 9 xxxx xxxx")
+      return
+    }
 
     if (!editingEntrenador) {
       try {
@@ -305,8 +329,12 @@ export default function AdminEntrenadoresPage() {
                 <Input
                   id="telefono"
                   value={formData.telefono}
-                  onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  placeholder="(+56) 9 xxxx xxxx"
+                  maxLength={17}
                 />
+                {phoneError && <p className="text-sm text-red-600 mt-1">{phoneError}</p>}
+                <p className="text-xs text-muted-foreground mt-1">Formato: (+56) 9 xxxx xxxx</p>
               </div>
               <div>
                 <Label htmlFor="especialidad">Especialidad</Label>

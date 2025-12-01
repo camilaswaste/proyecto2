@@ -8,6 +8,8 @@ export interface User {
   apellido: string
   rol: string
   rolID: number
+  socioID?: number // Opcional: usado cuando el usuario es un socio
+  entrenadorID?: number // Opcional: usado cuando el usuario es un entrenador
 }
 
 export function getUser(): User | null {

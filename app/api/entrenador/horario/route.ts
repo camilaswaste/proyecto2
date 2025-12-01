@@ -1,68 +1,105 @@
-import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
+import { NextResponse } from "next/server"
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const entrenadorID = searchParams.get("entrenadorID")
-    const fecha = searchParams.get("fecha") || new Date().toISOString().split("T")[0]
+    const entrenadorId = searchParams.get("entrenadorId") || searchParams.get("entrenadorID")
+    const startDate =
+      searchParams.get("startDate") || searchParams.get("fecha") || new Date().toISOString().split("T")[0]
 
-    if (!entrenadorID) {
+    if (!entrenadorId) {
       return NextResponse.json({ error: "EntrenadorID es requerido" }, { status: 400 })
     }
 
     const pool = await getConnection()
 
-    // Get personal sessions for the week
+    const clasesResult = await pool
+      .request()
+      .input("entrenadorID", entrenadorId)
+      .input("fecha", startDate)
+      .query(`
+        SELECT 
+          c.ClaseID,
+          c.NombreClase,
+          c.DiaSemana,
+          CONVERT(VARCHAR(5), c.HoraInicio, 108) as HoraInicio,
+          CONVERT(VARCHAR(5), c.HoraFin, 108) as HoraFin,
+          c.CupoMaximo,
+          (SELECT COUNT(*) FROM ReservasClases rc 
+           WHERE rc.ClaseID = c.ClaseID 
+           AND rc.Estado = 'Reservada'
+           AND rc.FechaClase >= DATEADD(week, DATEDIFF(week, 0, @fecha), 0)
+           AND rc.FechaClase < DATEADD(week, DATEDIFF(week, 0, @fecha) + 1, 0)
+          ) as Inscritos,
+          'Grupal' as TipoSesion
+        FROM Clases c
+        WHERE c.EntrenadorID = @entrenadorID
+          AND c.Activa = 1
+        ORDER BY 
+          CASE c.DiaSemana
+            WHEN 'Lunes' THEN 1
+            WHEN 'Martes' THEN 2
+            WHEN 'Miércoles' THEN 3
+            WHEN 'Jueves' THEN 4
+            WHEN 'Viernes' THEN 5
+            WHEN 'Sábado' THEN 6
+            WHEN 'Domingo' THEN 7
+          END,
+          c.HoraInicio
+      `)
+
     const sesionesResult = await pool
       .request()
-      .input("entrenadorID", entrenadorID)
-      .input("fecha", fecha)
+      .input("entrenadorID", entrenadorId)
+      .input("fecha", startDate)
       .query(`
         SELECT 
           sp.SesionID,
-          sp.FechaSesion,
-          sp.HoraInicio,
-          sp.HoraFin,
+          CONVERT(VARCHAR(10), sp.FechaSesion, 23) as FechaSesion,
+          CONVERT(VARCHAR(5), sp.HoraInicio, 108) as HoraInicio,
+          CONVERT(VARCHAR(5), sp.HoraFin, 108) as HoraFin,
           sp.Estado,
-          sp.Notas,
-          u.Nombre + ' ' + u.Apellido as NombreSocio,
+          s.Nombre + ' ' + s.Apellido as NombreSocio,
           'Personal' as TipoSesion
         FROM SesionesPersonales sp
         INNER JOIN Socios s ON sp.SocioID = s.SocioID
-        INNER JOIN Usuarios u ON s.UsuarioID = u.UsuarioID
         WHERE sp.EntrenadorID = @entrenadorID
-        AND sp.FechaSesion >= DATEADD(day, -DATEPART(weekday, @fecha) + 1, @fecha)
-        AND sp.FechaSesion < DATEADD(day, 8 - DATEPART(weekday, @fecha), @fecha)
+          AND sp.FechaSesion >= DATEADD(week, DATEDIFF(week, 0, @fecha), 0)
+          AND sp.FechaSesion < DATEADD(week, DATEDIFF(week, 0, @fecha) + 1, 0)
+          AND sp.Estado != 'Cancelada'
         ORDER BY sp.FechaSesion, sp.HoraInicio
       `)
 
-    // Get group classes for the week
-    const clasesResult = await pool
+    const recepcionResult = await pool
       .request()
-      .input("entrenadorID", entrenadorID)
-      .input("fecha", fecha)
+      .input("entrenadorID", entrenadorId)
       .query(`
         SELECT 
-          ClaseID,
-          NombreClase,
-          Horario as FechaSesion,
-          Horario as HoraInicio,
-          DATEADD(minute, Duracion, Horario) as HoraFin,
-          Estado,
-          CupoDisponible,
-          'Grupal' as TipoSesion
-        FROM Clases
-        WHERE EntrenadorID = @entrenadorID
-        AND Horario >= DATEADD(day, -DATEPART(weekday, @fecha) + 1, @fecha)
-        AND Horario < DATEADD(day, 8 - DATEPART(weekday, @fecha), @fecha)
-        AND Estado = 'Activa'
-        ORDER BY Horario
+          hr.HorarioRecepcionID,
+          hr.DiaSemana,
+          CONVERT(VARCHAR(5), hr.HoraInicio, 108) as HoraInicio,
+          CONVERT(VARCHAR(5), hr.HoraFin, 108) as HoraFin
+        FROM HorariosRecepcion hr
+        WHERE hr.EntrenadorID = @entrenadorID
+          AND hr.Activo = 1
+        ORDER BY 
+          CASE hr.DiaSemana
+            WHEN 'Lunes' THEN 1
+            WHEN 'Martes' THEN 2
+            WHEN 'Miércoles' THEN 3
+            WHEN 'Jueves' THEN 4
+            WHEN 'Viernes' THEN 5
+            WHEN 'Sábado' THEN 6
+            WHEN 'Domingo' THEN 7
+          END,
+          hr.HoraInicio
       `)
 
     return NextResponse.json({
-      sesionesPersonales: sesionesResult.recordset,
-      clasesGrupales: clasesResult.recordset,
+      clases: clasesResult.recordset,
+      sesiones: sesionesResult.recordset,
+      recepcion: recepcionResult.recordset,
     })
   } catch (error) {
     console.error("Error al obtener horario del entrenador:", error)

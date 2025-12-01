@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Calendar } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Calendar, ChevronLeft, ChevronRight } from "lucide-react"
+import { useEffect, useState } from "react"
 
 interface Clase {
   ClaseID: number
@@ -32,15 +33,30 @@ export default function AdminCronogramaPage() {
   const [clases, setClases] = useState<Clase[]>([])
   const [sesiones, setSesiones] = useState<Sesion[]>([])
   const [loading, setLoading] = useState(true)
+  const [mostrarClases, setMostrarClases] = useState(true)
+  const [mostrarSesiones, setMostrarSesiones] = useState(true)
 
   useEffect(() => {
     fetchCronograma()
   }, [currentDate])
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchCronograma()
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [currentDate])
+
   const fetchCronograma = async () => {
     try {
       const fecha = currentDate.toISOString().split("T")[0]
+
       const response = await fetch(`/api/admin/cronograma?fecha=${fecha}`)
+
       if (response.ok) {
         const data = await response.json()
         setClases(data.clases)
@@ -78,9 +94,10 @@ export default function AdminCronogramaPage() {
       horaFin: string
     }> = []
 
-    clases
-      .filter((clase) => clase.DiaSemana === dia)
-      .forEach((clase) => {
+    if (mostrarClases) {
+      const clasesDelDia = clases.filter((clase) => clase.DiaSemana === dia)
+
+      clasesDelDia.forEach((clase) => {
         eventos.push({
           tipo: "clase",
           nombre: clase.NombreClase,
@@ -90,14 +107,19 @@ export default function AdminCronogramaPage() {
           horaFin: clase.HoraFin,
         })
       })
+    }
 
     const fechaDia = weekDates[diaIndex]
-    sesiones
-      .filter((sesion) => {
-        const fechaSesion = new Date(sesion.FechaSesion).toDateString()
-        return fechaSesion === fechaDia.toDateString()
+    const fechaDiaStr = `${fechaDia.getFullYear()}-${String(fechaDia.getMonth() + 1).padStart(2, "0")}-${String(fechaDia.getDate()).padStart(2, "0")}`
+
+    if (mostrarSesiones) {
+      const sesionesDelDia = sesiones.filter((sesion) => {
+        // Extraer solo la parte de fecha (YYYY-MM-DD) sin conversión de timezone
+        const fechaSesionStr = sesion.FechaSesion.split("T")[0]
+        return fechaSesionStr === fechaDiaStr
       })
-      .forEach((sesion) => {
+
+      sesionesDelDia.forEach((sesion) => {
         eventos.push({
           tipo: "sesion",
           nombre: "Sesión Personal",
@@ -107,6 +129,7 @@ export default function AdminCronogramaPage() {
           horaFin: sesion.HoraFin,
         })
       })
+    }
 
     return eventos.sort((a, b) => a.horaInicio.localeCompare(b.horaInicio))
   }
@@ -210,14 +233,28 @@ export default function AdminCronogramaPage() {
               </div>
             </div>
 
-            <div className="flex gap-4 mt-4 pt-4 border-t">
+            <div className="flex gap-6 mt-4 pt-4 border-t">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-50 border border-blue-200 rounded"></div>
-                <span className="text-sm">Clases Grupales</span>
+                <Checkbox
+                  id="clases-grupales"
+                  checked={mostrarClases}
+                  onCheckedChange={(checked) => setMostrarClases(checked === true)}
+                />
+                <label htmlFor="clases-grupales" className="flex items-center gap-2 cursor-pointer">
+                  <div className="w-4 h-4 bg-blue-50 border border-blue-200 rounded"></div>
+                  <span className="text-sm">Clases Grupales</span>
+                </label>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-50 border border-green-200 rounded"></div>
-                <span className="text-sm">Sesiones Personales</span>
+                <Checkbox
+                  id="sesiones-personales"
+                  checked={mostrarSesiones}
+                  onCheckedChange={(checked) => setMostrarSesiones(checked === true)}
+                />
+                <label htmlFor="sesiones-personales" className="flex items-center gap-2 cursor-pointer">
+                  <div className="w-4 h-4 bg-green-50 border border-green-200 rounded"></div>
+                  <span className="text-sm">Sesiones Personales</span>
+                </label>
               </div>
             </div>
           </CardContent>
