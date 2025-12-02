@@ -1,25 +1,82 @@
 "use client"
 
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
 import { Button } from "@/components/ui/button"
-import { CreditCard, Calendar, QrCode, TrendingUp } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { getUser } from "@/lib/auth-client"
+import { Calendar, CreditCard, QrCode, TrendingUp } from "lucide-react"
 import Link from "next/link"
+import { useEffect, useState } from "react"
+
+interface MembresiaData {
+  plan: string
+  fechaInicio: string
+  fechaVencimiento: string
+  diasRestantes: number
+  estado: string
+  codigoQR?: string
+}
 
 export default function SocioDashboardPage() {
-  // Mock data
-  const membershipData = {
-    plan: "Trimestral",
-    fechaInicio: "2025-01-01",
-    fechaVencimiento: "2025-04-01",
-    diasRestantes: 71,
-    estado: "Vigente",
-  }
+  const [membershipData, setMembershipData] = useState<MembresiaData | null>(null)
+  const [showQR, setShowQR] = useState(false)
+  const [loading, setLoading] = useState(true)
 
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const user = await getUser()
+        if (!user || !user.socioID) {
+          console.error("[v0] No socio ID found")
+          return
+        }
+
+        const response = await fetch(`/api/socio/membresia?socioID=${user.socioID}`)
+        if (!response.ok) throw new Error("Error al obtener datos de membresía")
+
+        const data = await response.json()
+
+        if (data) {
+          const fechaVencimiento = new Date(data.FechaFin)
+          const hoy = new Date()
+          const diasRestantes = Math.ceil((fechaVencimiento.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+
+          setMembershipData({
+            plan: data.NombrePlan,
+            fechaInicio: new Date(data.FechaInicio).toLocaleDateString("es-CL"),
+            fechaVencimiento: fechaVencimiento.toLocaleDateString("es-CL"),
+            diasRestantes: diasRestantes > 0 ? diasRestantes : 0,
+            estado: data.Estado,
+            codigoQR: data.CodigoQR,
+          })
+        }
+      } catch (error) {
+        console.error("[v0] Error fetching membership data:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  // Mock stats (esto se puede mejorar después)
   const stats = {
     asistenciasMes: 18,
     proximaSesion: "2025-01-22 11:00",
     clasesReservadas: 3,
+  }
+
+  if (loading) {
+    return (
+      <DashboardLayout role="Socio">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Cargando...</p>
+        </div>
+      </DashboardLayout>
+    )
   }
 
   return (
@@ -42,21 +99,27 @@ export default function SocioDashboardPage() {
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Plan Actual</p>
-                <p className="text-2xl font-bold">{membershipData.plan}</p>
+                <p className="text-2xl font-bold">{membershipData?.plan || "Sin plan"}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Estado</p>
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                  {membershipData.estado}
+                <span
+                  className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                    membershipData?.estado === "Vigente" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {membershipData?.estado || "Sin datos"}
                 </span>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Fecha de Vencimiento</p>
-                <p className="text-lg font-medium">{membershipData.fechaVencimiento}</p>
+                <p className="text-lg font-medium">{membershipData?.fechaVencimiento || "N/A"}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Días Restantes</p>
-                <p className="text-lg font-medium">{membershipData.diasRestantes} días</p>
+                <p className="text-lg font-medium">
+                  {membershipData?.diasRestantes !== undefined ? `${membershipData.diasRestantes} días` : "N/A"}
+                </p>
               </div>
             </div>
             <div className="mt-4">
@@ -128,7 +191,12 @@ export default function SocioDashboardPage() {
                   Realizar Pago
                 </Button>
               </Link>
-              <Button variant="outline" className="w-full justify-start bg-transparent">
+              <Button
+                variant="outline"
+                className="w-full justify-start bg-transparent"
+                onClick={() => setShowQR(true)}
+                disabled={!membershipData?.codigoQR}
+              >
                 <QrCode className="h-4 w-4 mr-2" />
                 Ver Mi Código QR
               </Button>
@@ -165,6 +233,25 @@ export default function SocioDashboardPage() {
           </Card>
         </div>
       </div>
+
+      <Dialog open={showQR} onOpenChange={setShowQR}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tu Código QR de Acceso</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-6 space-y-4">
+            {membershipData?.codigoQR ? (
+              <>
+                <QrCodeQuickChart value={membershipData.codigoQR} size={250} />
+                <p className="text-sm text-muted-foreground text-center">Muestra este código al ingresar al gimnasio</p>
+                <p className="text-xs text-muted-foreground">Código: {membershipData.codigoQR}</p>
+              </>
+            ) : (
+              <p className="text-muted-foreground">No tienes un código QR asignado aún</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   )
 }

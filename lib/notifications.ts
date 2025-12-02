@@ -11,6 +11,9 @@ export type TipoEvento =
   | "intercambio_rechazado"
   | "recepcion_asignada"
   | "inscripcion_clase"
+  | "membresia_asignada"
+  | "membresia_actualizada"
+  | "pago_registrado"
 
 interface NotificacionParams {
   tipoUsuario: "Admin" | "Entrenador" | "Socio"

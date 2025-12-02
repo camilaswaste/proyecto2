@@ -1,15 +1,16 @@
 "use client"
 
-import type React from "react"
-
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatPhone, formatRUT, validatePhone, validateRUT } from "@/lib/validations"
-import { Edit, Plus, Search, Trash2 } from "lucide-react"
+import { Edit, Plus, QrCodeIcon, Search, Trash2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import type React from "react"
 import { useEffect, useState } from "react"
 
 interface Socio {
@@ -22,8 +23,11 @@ interface Socio {
   FechaNacimiento?: string
   Direccion?: string
   EstadoSocio: string
+  CodigoQR: string
   NombrePlan: string | null
   EstadoMembresia: string | null
+  FechaInicio: string | null
+  FechaFin: string | null
 }
 
 export default function AdminSociosPage() {
@@ -44,6 +48,11 @@ export default function AdminSociosPage() {
   })
   const [rutError, setRutError] = useState("")
   const [phoneError, setPhoneError] = useState("")
+
+  const router = useRouter()
+
+  const [showQrDialog, setShowQrDialog] = useState(false)
+  const [qrSocio, setQrSocio] = useState<Socio | null>(null)
 
   useEffect(() => {
     fetchSocios()
@@ -93,6 +102,11 @@ export default function AdminSociosPage() {
       })
     }
     setShowDialog(true)
+  }
+
+  const handleOpenQrDialog = (socio: Socio) => {
+    setQrSocio(socio)
+    setShowQrDialog(true)
   }
 
   const handleRUTChange = (value: string) => {
@@ -203,6 +217,15 @@ export default function AdminSociosPage() {
     }
   }
 
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "N/A"
+    try {
+      return new Date(dateString).toLocaleDateString()
+    } catch {
+      return "Error"
+    }
+  }
+
   const filteredSocios = socios.filter(
     (socio) =>
       socio.Nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -260,13 +283,14 @@ export default function AdminSociosPage() {
                       <th className="text-left p-3 font-medium">Email</th>
                       <th className="text-left p-3 font-medium">Teléfono</th>
                       <th className="text-left p-3 font-medium">Estado</th>
+                      <th className="text-left p-3 font-medium">QR</th>
                       <th className="text-left p-3 font-medium">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredSocios.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
                           No se encontraron socios
                         </td>
                       </tr>
@@ -289,6 +313,18 @@ export default function AdminSociosPage() {
                             >
                               {socio.EstadoSocio}
                             </span>
+                          </td>
+                          <td className="p-3">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenQrDialog(socio)}
+                              disabled={!socio.CodigoQR}
+                            >
+                              <QrCodeIcon
+                                className={`h-4 w-4 ${socio.CodigoQR ? "text-primary" : "text-muted-foreground"}`}
+                              />
+                            </Button>
                           </td>
                           <td className="p-3">
                             <div className="flex gap-2">
@@ -412,6 +448,34 @@ export default function AdminSociosPage() {
                 <Button type="submit">{editingSocio ? "Actualizar" : "Crear"}</Button>
               </div>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Código QR de Acceso</DialogTitle>
+              <DialogClose onClose={() => setShowQrDialog(false)} />
+            </DialogHeader>
+            {qrSocio && (
+              <div className="flex flex-col items-center space-y-4 p-4">
+                <p className="text-center text-lg font-semibold">
+                  {qrSocio.Nombre} {qrSocio.Apellido} ({qrSocio.RUT})
+                </p>
+                {qrSocio.CodigoQR ? (
+                  <>
+                    <div className="p-4 border border-gray-300 rounded-lg bg-white shadow-xl">
+                      <QrCodeQuickChart value={qrSocio.CodigoQR} size={256} />
+                    </div>
+                    <p className="text-sm text-muted-foreground text-center pt-2">
+                      Este código se usa para el control de acceso.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-red-500">Este socio no tiene un Código QR asignado.</p>
+                )}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
