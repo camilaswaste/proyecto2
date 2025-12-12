@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CreditCard, CheckCircle2 } from "lucide-react"
+import { CreditCard, CheckCircle2, Download } from "lucide-react"
 import { getUser } from "@/lib/auth-client"
 
 interface Pago {
@@ -52,6 +52,34 @@ export default function SocioPagosPage() {
     // Symbolic payment - just show success message
     setSuccess(true)
     setTimeout(() => setSuccess(false), 5000)
+  }
+
+  const handleDownloadComprobante = async (pagoID: number) => {
+    try {
+      console.log("[v0] Descargando comprobante para pago:", pagoID)
+      const response = await fetch(`/api/pagos/${pagoID}/generate-pdf`, {
+        method: "POST",
+      })
+
+      if (!response.ok) {
+        throw new Error("Error al generar comprobante")
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Comprobante-${pagoID}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      console.log("[v0] Comprobante descargado exitosamente")
+    } catch (error) {
+      console.error("[v0] Error al descargar comprobante:", error)
+      alert("Error al descargar el comprobante")
+    }
   }
 
   return (
@@ -135,12 +163,13 @@ export default function SocioPagosPage() {
                       <th className="text-left p-3 font-medium">Concepto</th>
                       <th className="text-left p-3 font-medium">Monto</th>
                       <th className="text-left p-3 font-medium">Estado</th>
+                      <th className="text-center p-3 font-medium">Comprobante</th>
                     </tr>
                   </thead>
                   <tbody>
                     {historialPagos.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={5} className="p-8 text-center text-muted-foreground">
                           No hay pagos registrados
                         </td>
                       </tr>
@@ -160,6 +189,12 @@ export default function SocioPagosPage() {
                             >
                               {pago.Estado}
                             </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <Button size="sm" variant="outline" onClick={() => handleDownloadComprobante(pago.PagoID)}>
+                              <Download className="w-4 h-4 mr-2" />
+                              Descargar
+                            </Button>
                           </td>
                         </tr>
                       ))
