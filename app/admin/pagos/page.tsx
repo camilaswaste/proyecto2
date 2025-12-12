@@ -18,6 +18,8 @@ import {
   FileText,
   TrendingUp,
   Filter,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -36,10 +38,16 @@ export default function PagosPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [metodoFilter, setMetodoFilter] = useState<string>("todos")
   const [periodoFilter, setPeriodoFilter] = useState<string>("todos")
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
   useEffect(() => {
     fetchPagos()
   }, [])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, metodoFilter, periodoFilter])
 
   const fetchPagos = async () => {
     try {
@@ -78,6 +86,11 @@ export default function PagosPage() {
 
     return matchesSearch && matchesMetodo && matchesPeriodo
   })
+
+  const totalPages = Math.ceil(filteredPagos.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentPagos = filteredPagos.slice(startIndex, endIndex)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-CL", {
@@ -121,6 +134,18 @@ export default function PagosPage() {
   }
 
   const totalPagos = pagos.reduce((sum, pago) => sum + pago.Monto, 0)
+  const promedioPago = pagos.length > 0 ? totalPagos / pagos.length : 0
+
+  const pagosPorMetodo = pagos.reduce(
+    (acc, pago) => {
+      const metodo = pago.MetodoPago?.toLowerCase() || "otro"
+      acc[metodo] = (acc[metodo] || 0) + 1
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+
+  const metodoMasUsado = Object.entries(pagosPorMetodo).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A"
 
   if (loading) {
     return (
@@ -138,51 +163,79 @@ export default function PagosPage() {
   return (
     <DashboardLayout role="Administrador">
       <div className="space-y-6">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight text-balance">Gestión de Pagos</h1>
-            <p className="text-muted-foreground text-pretty max-w-2xl">
-              Visualiza y gestiona todos los pagos procesados en el sistema
-            </p>
-          </div>
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold tracking-tight text-balance">Gestión de Pagos</h1>
+          <p className="text-muted-foreground text-pretty max-w-2xl">
+            Visualiza y gestiona todos los pagos procesados en el sistema
+          </p>
+        </div>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:gap-6">
-            <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent rounded-3xl blur-xl transition-all group-hover:blur-2xl" />
-              <div className="relative bg-gradient-to-br from-primary/10 via-background to-background border border-primary/20 rounded-3xl p-6 backdrop-blur-sm">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 bg-primary/10 rounded-2xl">
-                    <TrendingUp className="h-6 w-6 text-primary" />
-                  </div>
-                  <div className="px-3 py-1 bg-primary/10 rounded-full">
-                    <span className="text-xs font-semibold text-primary">Total</span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Ingresos Totales</p>
-                  <p className="text-3xl font-bold tracking-tight">{formatCurrency(totalPagos)}</p>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="relative overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 to-background">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-50" />
+            <CardHeader className="relative pb-2">
+              <div className="flex items-center justify-between">
+                <CardDescription className="text-xs font-medium">Ingresos Totales</CardDescription>
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <TrendingUp className="h-4 w-4 text-primary" />
                 </div>
               </div>
-            </div>
+            </CardHeader>
+            <CardContent className="relative">
+              <div className="text-2xl font-bold">{formatCurrency(totalPagos)}</div>
+              <p className="text-xs text-muted-foreground mt-1">Total acumulado</p>
+            </CardContent>
+          </Card>
 
-            <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-purple-500/10 to-transparent rounded-3xl blur-xl transition-all group-hover:blur-2xl" />
-              <div className="relative bg-gradient-to-br from-blue-500/5 via-purple-500/5 to-background border border-border rounded-3xl p-6 backdrop-blur-sm">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 bg-blue-500/10 rounded-2xl">
-                    <Wallet className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="px-3 py-1 bg-blue-500/10 rounded-full">
-                    <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Registros</span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Pagos Realizados</p>
-                  <p className="text-3xl font-bold tracking-tight text-blue-600 dark:text-blue-400">{pagos.length}</p>
+          <Card className="relative overflow-hidden border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-background">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-transparent opacity-50" />
+            <CardHeader className="relative pb-2">
+              <div className="flex items-center justify-between">
+                <CardDescription className="text-xs font-medium">Pagos Registrados</CardDescription>
+                <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <Wallet className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
               </div>
-            </div>
-          </div>
+            </CardHeader>
+            <CardContent className="relative">
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{pagos.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Total de transacciones</p>
+            </CardContent>
+          </Card>
+
+          <Card className="relative overflow-hidden border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-background">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent opacity-50" />
+            <CardHeader className="relative pb-2">
+              <div className="flex items-center justify-between">
+                <CardDescription className="text-xs font-medium">Promedio por Pago</CardDescription>
+                <div className="p-2 bg-emerald-500/10 rounded-lg">
+                  <Banknote className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="relative">
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(promedioPago)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Valor medio</p>
+            </CardContent>
+          </Card>
+
+          <Card className="relative overflow-hidden border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-background">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-transparent opacity-50" />
+            <CardHeader className="relative pb-2">
+              <div className="flex items-center justify-between">
+                <CardDescription className="text-xs font-medium">Método Más Usado</CardDescription>
+                <div className="p-2 bg-purple-500/10 rounded-lg">
+                  <CreditCard className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="relative">
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 capitalize">{metodoMasUsado}</div>
+              <p className="text-xs text-muted-foreground mt-1">{pagosPorMetodo[metodoMasUsado] || 0} pagos</p>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="border shadow-sm">
@@ -280,7 +333,7 @@ export default function PagosPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredPagos.length === 0 ? (
+                      {currentPagos.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-16 text-center">
                             <div className="flex flex-col items-center gap-3">
@@ -299,7 +352,7 @@ export default function PagosPage() {
                           </td>
                         </tr>
                       ) : (
-                        filteredPagos.map((pago) => {
+                        currentPagos.map((pago) => {
                           const metodoInfo = getMetodoDisplay(pago.MetodoPago)
                           const MetodoIcon = metodoInfo.icon
 
@@ -359,6 +412,63 @@ export default function PagosPage() {
                   </table>
                 </div>
               </div>
+
+              {filteredPagos.length > 0 && (
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {startIndex + 1} a {Math.min(endIndex, filteredPagos.length)} de {filteredPagos.length}{" "}
+                    pagos
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="gap-2"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </Button>
+
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                        if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
+                          return (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(page)}
+                              className="w-9 h-9 p-0"
+                            >
+                              {page}
+                            </Button>
+                          )
+                        } else if (page === currentPage - 2 || page === currentPage + 2) {
+                          return (
+                            <span key={page} className="px-2 text-muted-foreground">
+                              ...
+                            </span>
+                          )
+                        }
+                        return null
+                      })}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="gap-2"
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

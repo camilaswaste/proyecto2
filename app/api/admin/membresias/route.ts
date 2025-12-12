@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
-import { crearNotificacion } from "@/lib/notifications" // <--- 1. RE-IMPORTADO
+import { crearNotificacion } from "@/lib/notifications"
 import sql from "mssql"
 
 export async function GET() {
@@ -15,8 +15,16 @@ export async function GET() {
         Precio,
         DuracionDias,
         TipoPlan,
+        Descuento,
+        FechaInicioOferta,
+        FechaFinOferta,
         Beneficios,
-        Activo
+        Activo,
+        CASE 
+          WHEN TipoPlan = 'Oferta' AND Descuento > 0 
+          THEN ROUND(Precio / (1 - Descuento / 100.0), 0)
+          ELSE Precio
+        END AS PrecioOriginal
       FROM PlanesMembresía
       ORDER BY Precio ASC
     `)
@@ -28,26 +36,49 @@ export async function GET() {
   }
 }
 
-// CreaMOS PLAN DE MEMBRESIA
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { nombrePlan, descripcion, precio, duracionDias, tipoPlan, beneficios } = body
+    const {
+      nombrePlan,
+      descripcion,
+      precioOriginal,
+      descuento,
+      duracionDias,
+      tipoPlan,
+      fechaInicioOferta,
+      fechaFinOferta,
+      beneficios,
+    } = body
 
     const pool = await getConnection()
+
+    let precioFinal = Number(precioOriginal)
+    if (tipoPlan === "Oferta" && descuento) {
+      precioFinal = Math.round(precioFinal * (1 - Number(descuento) / 100))
+    }
 
     await pool
       .request()
       .input("nombrePlan", nombrePlan)
       .input("descripcion", descripcion)
-      .input("precio", precio)
+      .input("precio", precioFinal)
       .input("duracionDias", duracionDias)
       .input("tipoPlan", tipoPlan)
+      .input("descuento", tipoPlan === "Oferta" ? Number(descuento) : 0)
+      .input("fechaInicioOferta", tipoPlan === "Oferta" ? fechaInicioOferta : null)
+      .input("fechaFinOferta", tipoPlan === "Oferta" ? fechaFinOferta : null)
       .input("beneficios", beneficios)
       .input("activo", true)
       .query(`
-        INSERT INTO PlanesMembresía (NombrePlan, Descripcion, Precio, DuracionDias, TipoPlan, Beneficios, Activo)
-        VALUES (@nombrePlan, @descripcion, @precio, @duracionDias, @tipoPlan, @beneficios, @activo)
+        INSERT INTO PlanesMembresía (
+          NombrePlan, Descripcion, Precio, DuracionDias, TipoPlan, 
+          Descuento, FechaInicioOferta, FechaFinOferta, Beneficios, Activo
+        )
+        VALUES (
+          @nombrePlan, @descripcion, @precio, @duracionDias, @tipoPlan,
+          @descuento, @fechaInicioOferta, @fechaFinOferta, @beneficios, @activo
+        )
       `)
 
     return NextResponse.json({ success: true, message: "Plan creado exitosamente" })
@@ -57,104 +88,125 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT PARA ACTUALZIAR DEFINICION DE UN PLAN (CRUD)
-// ASIGNAR ACTIVAR MEMBRESIA A UN SOCIO
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
     const pool = await getConnection()
 
-    // CASO 1: ASIGNACIÓN DE MEMBRESÍA (Detectado por la presencia de pagoID)
+    // CASO 1: ASIGNACIÓN DE MEMBRESÍA
     if (body.pagoID && body.socioID) {
-        const { socioID, planID, pagoID } = body
+      const { socioID, planID, pagoID } = body
 
-        // 1. Obtener duración y NOMBRE del plan
-        const planResult = await pool.request()
-            .input('planID', sql.Int, planID)
-            .query(`SELECT DuracionDias, NombrePlan FROM PlanesMembresía WHERE PlanID = @planID`) // <--- 2. CONSULTA MODIFICADA
-        
-        const plan = planResult.recordset[0]
-        if (!plan) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 })
+      const planResult = await pool
+        .request()
+        .input("planID", sql.Int, planID)
+        .query(`SELECT DuracionDias, NombrePlan FROM PlanesMembresía WHERE PlanID = @planID`)
 
-        // 2. Desactivar membresía anterior
-        await pool.request()
-            .input("socioID", socioID)
-            .query(`UPDATE Membresías SET Estado = 'Vencida' WHERE SocioID = @socioID AND Estado = 'Vigente'`)
+      const plan = planResult.recordset[0]
+      if (!plan) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 })
 
-        // 3. Calcular Fechas
-        const fechaInicio = new Date()
-        const fechaFin = new Date()
-        fechaFin.setDate(fechaFin.getDate() + plan.DuracionDias)
+      await pool
+        .request()
+        .input("socioID", socioID)
+        .query(`UPDATE Membresías SET Estado = 'Vencida' WHERE SocioID = @socioID AND Estado = 'Vigente'`)
 
-        // 4. Obtener monto real pagado
-        const montoResult = await pool.request()
-            .input("pagoID", pagoID)
-            .query(`SELECT MontoPago FROM Pagos WHERE PagoID = @pagoID`)
-        const montoPagado = montoResult.recordset[0]?.MontoPago || 0
+      const fechaInicio = new Date()
+      const fechaFin = new Date()
+      fechaFin.setDate(fechaFin.getDate() + plan.DuracionDias)
 
-        // 5. Insertar Membresía VIGENTE
-        await pool.request()
-            .input("socioID", socioID)
-            .input("planID", planID)
-            .input("fechaInicio", fechaInicio)
-            .input("fechaFin", fechaFin)
-            .input("montoPagado", montoPagado)
-            .query(`
-                INSERT INTO Membresías (SocioID, PlanID, FechaInicio, FechaVencimiento, Estado, MontoPagado)
-                VALUES (@socioID, @planID, @fechaInicio, @fechaFin, 'Vigente', @montoPagado)
-            `)
+      const montoResult = await pool
+        .request()
+        .input("pagoID", pagoID)
+        .query(`SELECT MontoPago FROM Pagos WHERE PagoID = @pagoID`)
+      const montoPagado = montoResult.recordset[0]?.MontoPago || 0
 
-        // 6. Activar Socio
-        await pool.request()
-            .input("socioID", socioID)
-            .query(`UPDATE Socios SET EstadoSocio = 'Activo' WHERE SocioID = @socioID AND EstadoSocio = 'Inactivo'`)
+      await pool
+        .request()
+        .input("socioID", socioID)
+        .input("planID", planID)
+        .input("fechaInicio", fechaInicio)
+        .input("fechaFin", fechaFin)
+        .input("montoPagado", montoPagado)
+        .query(`
+          INSERT INTO Membresías (SocioID, PlanID, FechaInicio, FechaVencimiento, Estado, MontoPagado)
+          VALUES (@socioID, @planID, @fechaInicio, @fechaFin, 'Vigente', @montoPagado)
+        `)
 
-        // 7. Limpiar concepto del pago
-        await pool.request()
-             .input("pagoID", pagoID)
-             .query(`UPDATE Pagos SET Concepto = REPLACE(Concepto, ' - PENDIENTE DE ASIGNACIÓN', '') WHERE PagoID = @pagoID`)
+      await pool
+        .request()
+        .input("socioID", socioID)
+        .query(`UPDATE Socios SET EstadoSocio = 'Activo' WHERE SocioID = @socioID AND EstadoSocio = 'Inactivo'`)
 
-        // 8. Crear notificación para el socio <--- 3. LÓGICA RE-INSERTADA
-        try {
-          await crearNotificacion({
-            tipoUsuario: "Socio",
-            usuarioID: socioID,
-            tipoEvento: "membresia_asignada",
-            titulo: "Membresía activada",
-            mensaje: `Tu membresía ${plan.NombrePlan} ha sido activada exitosamente. Vence el ${fechaFin.toLocaleDateString("es-CL")}.`,
-          })
-        } catch (error) {
-          console.error("Error al crear notificación de membresía:", error)
-        }
-        // Fin de la lógica re-insertada
+      await pool
+        .request()
+        .input("pagoID", pagoID)
+        .query(`UPDATE Pagos SET Concepto = REPLACE(Concepto, ' - PENDIENTE DE ASIGNACIÓN', '') WHERE PagoID = @pagoID`)
 
-        return NextResponse.json({ success: true, message: "Membresía asignada y activada exitosamente" })
-    } 
-    
-    // CASO 2: ACTUALIZAR DATOS DEL PLAN (CRUD ADMIN)
-    else {
-        const { planID, nombrePlan, descripcion, precio, duracionDias, tipoPlan, beneficios, activo } = body
+      try {
+        await crearNotificacion({
+          tipoUsuario: "Socio",
+          usuarioID: socioID,
+          tipoEvento: "membresia_asignada",
+          titulo: "Membresía activada",
+          mensaje: `Tu membresía ${plan.NombrePlan} ha sido activada exitosamente. Vence el ${fechaFin.toLocaleDateString("es-CL")}.`,
+        })
+      } catch (error) {
+        console.error("Error al crear notificación de membresía:", error)
+      }
 
-        await pool
-          .request()
-          .input("planID", planID)
-          .input("nombrePlan", nombrePlan)
-          .input("descripcion", descripcion)
-          .input("precio", precio)
-          .input("duracionDias", duracionDias)
-          .input("tipoPlan", tipoPlan)
-          .input("beneficios", beneficios)
-          .input("activo", activo)
-          .query(`
-            UPDATE PlanesMembresía
-            SET NombrePlan = @nombrePlan, Descripcion = @descripcion, Precio = @precio,
-                DuracionDias = @duracionDias, TipoPlan = @tipoPlan, Beneficios = @beneficios, Activo = @activo
-            WHERE PlanID = @planID
-          `)
-
-        return NextResponse.json({ success: true, message: "Plan actualizado exitosamente" })
+      return NextResponse.json({ success: true, message: "Membresía asignada y activada exitosamente" })
     }
+    // CASO 2: ACTUALIZAR PLAN
+    else {
+      const {
+        planID,
+        nombrePlan,
+        descripcion,
+        precioOriginal,
+        descuento,
+        duracionDias,
+        tipoPlan,
+        fechaInicioOferta,
+        fechaFinOferta,
+        beneficios,
+        activo,
+      } = body
 
+      let precioFinal = Number(precioOriginal)
+      if (tipoPlan === "Oferta" && descuento) {
+        precioFinal = Math.round(precioFinal * (1 - Number(descuento) / 100))
+      }
+
+      await pool
+        .request()
+        .input("planID", planID)
+        .input("nombrePlan", nombrePlan)
+        .input("descripcion", descripcion)
+        .input("precio", precioFinal)
+        .input("duracionDias", duracionDias)
+        .input("tipoPlan", tipoPlan)
+        .input("descuento", tipoPlan === "Oferta" ? Number(descuento) || 0 : 0)
+        .input("fechaInicioOferta", tipoPlan === "Oferta" ? fechaInicioOferta : null)
+        .input("fechaFinOferta", tipoPlan === "Oferta" ? fechaFinOferta : null)
+        .input("beneficios", beneficios)
+        .input("activo", activo)
+        .query(`
+          UPDATE PlanesMembresía
+          SET NombrePlan = @nombrePlan, 
+              Descripcion = @descripcion, 
+              Precio = @precio,
+              DuracionDias = @duracionDias, 
+              TipoPlan = @tipoPlan, 
+              Descuento = @descuento,
+              FechaInicioOferta = @fechaInicioOferta,
+              FechaFinOferta = @fechaFinOferta,
+              Beneficios = @beneficios, 
+              Activo = @activo
+          WHERE PlanID = @planID
+        `)
+
+      return NextResponse.json({ success: true, message: "Plan actualizado exitosamente" })
+    }
   } catch (error) {
     console.error("Error en PUT membresías/planes:", error)
     return NextResponse.json({ error: "Error al procesar la solicitud" }, { status: 500 })
@@ -172,7 +224,6 @@ export async function DELETE(request: Request) {
 
     const pool = await getConnection()
 
-    // Soft delete - just deactivate
     await pool
       .request()
       .input("planID", planID)

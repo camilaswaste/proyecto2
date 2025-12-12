@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
-import { Plus, Search, Edit, Trash2, QrCodeIcon, Filter } from "lucide-react"
+import { Plus, Search, Edit, Trash2, QrCodeIcon, Filter, ChevronLeft, ChevronRight } from "lucide-react"
 import { CreditCard } from "lucide-react"
 import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
 import { useRouter } from "next/navigation"
@@ -44,6 +44,8 @@ export default function AdminSociosPage() {
   const [socios, setSocios] = useState<Socio[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEstadoMembresia, setFilterEstadoMembresia] = useState<string>("todos")
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
   const router = useRouter()
 
@@ -86,7 +88,6 @@ export default function AdminSociosPage() {
     }
   }
 
-  // Added form handlers for creating and editing socios
   const handleOpenDialog = (socio?: Socio) => {
     if (socio) {
       setEditingSocio(socio)
@@ -115,6 +116,7 @@ export default function AdminSociosPage() {
     }
     setShowDialog(true)
   }
+
   const handleOpenQrDialog = (socio: Socio) => {
     setQrSocio(socio)
     setShowQrDialog(true)
@@ -294,6 +296,15 @@ export default function AdminSociosPage() {
     return matchesSearch && matchesEstado
   })
 
+  const totalPages = Math.ceil(filteredSocios.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedSocios = filteredSocios.slice(startIndex, endIndex)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, filterEstadoMembresia])
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "N/A"
     try {
@@ -434,14 +445,14 @@ export default function AdminSociosPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSocios.length === 0 ? (
+                    {paginatedSocios.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="p-8 text-center text-muted-foreground">
                           No se encontraron socios
                         </td>
                       </tr>
                     ) : (
-                      filteredSocios.map((socio) => (
+                      paginatedSocios.map((socio) => (
                         <tr key={socio.SocioID} className="border-t hover:bg-muted/50 transition-colors">
                           <td className="p-3 font-mono text-sm">{formatRUT(socio.RUT)}</td>
                           <td className="p-3">
@@ -513,6 +524,61 @@ export default function AdminSociosPage() {
                   </tbody>
                 </table>
               </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {startIndex + 1} - {Math.min(endIndex, filteredSocios.length)} de {filteredSocios.length}{" "}
+                    socios
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </Button>
+
+                    <div className="flex gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                        if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
+                          return (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(page)}
+                              className="w-10"
+                            >
+                              {page}
+                            </Button>
+                          )
+                        } else if (page === currentPage - 2 || page === currentPage + 2) {
+                          return (
+                            <span key={page} className="px-2 py-1 text-muted-foreground">
+                              ...
+                            </span>
+                          )
+                        }
+                        return null
+                      })}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

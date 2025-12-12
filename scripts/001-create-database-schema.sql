@@ -46,6 +46,21 @@ CREATE TABLE PlanesMembresía (
     FechaCreacion DATETIME DEFAULT GETDATE()
 );
 
+-- Tabla de Membresías (Asignación de planes a socios)
+CREATE TABLE Membresías (
+    MembresíaID INT PRIMARY KEY IDENTITY(1,1),
+    SocioID INT NOT NULL,
+    PlanID INT NOT NULL,
+    FechaInicio DATE NOT NULL,
+    FechaVencimiento DATE NOT NULL,
+    Estado NVARCHAR(20) CHECK (Estado IN ('Vigente', 'Vencida', 'Suspendida', 'Cancelada')) DEFAULT 'Vigente',
+    MontoPagado DECIMAL(10,2) NOT NULL,
+    FechaCreacion DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (SocioID) REFERENCES Socios(SocioID),
+    FOREIGN KEY (PlanID) REFERENCES PlanesMembresía(PlanID)
+);
+
+
 -- Tabla de Socios/Miembros
 CREATE TABLE Socios (
     SocioID INT PRIMARY KEY IDENTITY(1,1),
@@ -65,19 +80,6 @@ CREATE TABLE Socios (
     TelefonoEmergencia NVARCHAR(20)
 );
 
--- Tabla de Membresías (Asignación de planes a socios)
-CREATE TABLE Membresías (
-    MembresíaID INT PRIMARY KEY IDENTITY(1,1),
-    SocioID INT NOT NULL,
-    PlanID INT NOT NULL,
-    FechaInicio DATE NOT NULL,
-    FechaVencimiento DATE NOT NULL,
-    Estado NVARCHAR(20) CHECK (Estado IN ('Vigente', 'Vencida', 'Suspendida', 'Cancelada')) DEFAULT 'Vigente',
-    MontoPagado DECIMAL(10,2) NOT NULL,
-    FechaCreacion DATETIME DEFAULT GETDATE(),
-    FOREIGN KEY (SocioID) REFERENCES Socios(SocioID),
-    FOREIGN KEY (PlanID) REFERENCES PlanesMembresía(PlanID)
-);
 
 -- Tabla de Pagos
 CREATE TABLE Pagos (
