@@ -2,32 +2,70 @@ import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
 import { hashPassword } from "@/lib/auth"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const socioID = searchParams.get("id")
+
     const pool = await getConnection()
 
+    // CASO 1: BUSCAR UN SOCIO POR ID
+    if (socioID) {
+      const result = await pool
+        .request()
+        .input("SocioID", Number(socioID))
+        .query(`
+          SELECT TOP 1
+            s.SocioID,
+            s.RUT,
+            s.Nombre,
+            s.Apellido,
+            s.Email,
+            s.Telefono,
+            s.FechaNacimiento,
+            s.Direccion,
+            s.CodigoQR,
+            s.FechaRegistro,
+            s.EstadoSocio,
+            m.NombrePlan,
+            mem.FechaInicio,
+            mem.FechaVencimiento AS FechaFin,
+            mem.Estado AS EstadoMembresia
+          FROM Socios s
+          LEFT JOIN Membresías mem 
+            ON s.SocioID = mem.SocioID AND mem.Estado = 'Vigente'
+          LEFT JOIN PlanesMembresía m 
+            ON mem.PlanID = m.PlanID
+          WHERE s.SocioID = @SocioID
+        `)
+
+      if (result.recordset.length === 0) {
+        return NextResponse.json({ error: "Socio no encontrado" }, { status: 404 })
+      }
+
+      return NextResponse.json(result.recordset[0])
+    }
+
+    // CASO 2: LISTADO GENERAL
     const result = await pool.request().query(`
       SELECT 
-        s.SocioID,
-        s.RUT,
-        s.Nombre,
-        s.Apellido,
-        s.Email,
-        s.Telefono,
-        s.FechaNacimiento,
-        s.Direccion,
-        s.CodigoQR,
-        s.FechaRegistro,
-        s.EstadoSocio,
-        m.NombrePlan,
-        mem.FechaInicio,
-        mem.FechaVencimiento as FechaFin,
-        mem.Estado as EstadoMembresia
-      FROM Socios s
-      LEFT JOIN Membresías mem ON s.SocioID = mem.SocioID AND mem.Estado = 'Vigente'
-      LEFT JOIN PlanesMembresía m ON mem.PlanID = m.PlanID
-      WHERE s.EstadoSocio != 'Inactivo'
-      ORDER BY s.FechaRegistro DESC
+  s.SocioID, s.RUT, s.Nombre, s.Apellido, s.Email, s.Telefono,
+  s.FechaNacimiento, s.Direccion, s.CodigoQR, s.FechaRegistro, s.EstadoSocio,
+  pm.NombrePlan,
+  mem.FechaInicio,
+  mem.FechaVencimiento AS FechaFin,
+  mem.Estado AS EstadoMembresia
+FROM Socios s
+OUTER APPLY (
+  SELECT TOP 1 *
+  FROM Membresías
+  WHERE SocioID = s.SocioID
+  ORDER BY FechaCreacion DESC
+) mem
+LEFT JOIN PlanesMembresía pm ON mem.PlanID = pm.PlanID
+WHERE s.EstadoSocio != 'Inactivo'
+ORDER BY s.FechaRegistro DESC;
+
     `)
 
     return NextResponse.json(result.recordset)
@@ -36,6 +74,7 @@ export async function GET() {
     return NextResponse.json({ error: "Error al obtener socios" }, { status: 500 })
   }
 }
+
 
 export async function POST(request: Request) {
   try {

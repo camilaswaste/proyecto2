@@ -27,20 +27,32 @@ export async function GET(req: NextRequest) {
       .request()
       .input("pagoID", pagoID)
       .query(`
-        SELECT 
-          p.PagoID,
-          p.NumeroComprobante,
-          p.FechaPago,
-          p.MontoPago     AS Monto,        -- alias para usar data.Monto
-          p.MedioPago     AS MetodoPago,   -- alias para usar data.MetodoPago
-          p.Concepto,
-          s.Nombre,
-          s.Apellido,
-          s.RUT
-        FROM Pagos p
-        INNER JOIN Socios s ON p.SocioID = s.SocioID
-        WHERE p.PagoID = @pagoID;
-      `)
+    SELECT 
+      p.PagoID,
+      p.SocioID,
+      p.MembresíaID,
+      p.NumeroComprobante,
+      p.FechaPago,
+      p.MontoPago     AS Monto,
+      p.MedioPago     AS MetodoPago,
+      p.Concepto,
+      s.Nombre,
+      s.Apellido,
+      s.RUT,
+      s.Email,
+      s.Telefono,
+      pm.PlanID,
+      pm.NombrePlan,
+      pm.DuracionDias,
+      m.FechaInicio,
+      m.FechaVencimiento
+    FROM Pagos p
+    INNER JOIN Socios s ON p.SocioID = s.SocioID
+    LEFT JOIN Membresías m ON p.MembresíaID = m.MembresíaID
+    LEFT JOIN PlanesMembresía pm ON m.PlanID = pm.PlanID
+    WHERE p.PagoID = @pagoID;
+  `)
+
 
     if (result.recordset.length === 0) {
       return NextResponse.json({ error: "Comprobante no encontrado" }, { status: 404 })
@@ -171,18 +183,89 @@ export async function GET(req: NextRequest) {
 
     const pdfBytes = await pdfDoc.save() // Uint8Array
 
-    const { url : pdfUrl } = await uploadComprobantePDF("planes", pagoID, pdfBytes)
+    const tipo: "planes" | "productos" =
+      (data.Concepto || "").toLowerCase().includes("producto") ? "productos" : "planes"
+
+    const { url: pdfUrl } = await uploadComprobantePDF(tipo, pagoID, pdfBytes)
+
     console.log("PDF subido a S3 en URL:", pdfUrl)
-    
+
     await pool
-        .request()
-        .input("url", pdfUrl)
-        .input("pagoID", pagoID)
-        .query(`
+      .request()
+      .input("url", pdfUrl)
+      .input("pagoID", pagoID)
+      .query(`
             UPDATE Pagos
             SET ComprobantePath = @url
             WHERE PagoID = @pagoID;
         `)
+
+    // ====== INSERTAR COMPROBANTE (si no existe) ======
+
+    const numeroComprobante =
+      data.NumeroComprobante ?? `COMP-${Date.now()}-${data.PagoID}`
+
+    const nombreSocio = `${data.Nombre} ${data.Apellido}`.trim()
+
+    await pool.request()
+      .input("PagoID", data.PagoID)
+      .input("SocioID", data.SocioID)
+      .input("MembresíaID", data.MembresíaID ?? null)
+      .input("NumeroComprobante", numeroComprobante)
+      .input("MontoPago", data.Monto)
+      .input("MedioPago", data.MetodoPago)
+      .input("NombreSocio", nombreSocio)
+      .input("EmailSocio", data.Email ?? null)
+      .input("TelefonoSocio", data.Telefono ?? null)
+      .input("NombrePlan", data.NombrePlan ?? null)
+      .input("DuracionPlan", data.DuracionDias ?? null)
+      .input("FechaInicio", data.FechaInicio ?? null)
+      .input("FechaVencimiento", data.FechaVencimiento ?? null)
+      .input("Concepto", data.Concepto ?? null)
+      .query(`
+    IF NOT EXISTS (SELECT 1 FROM Comprobantes WHERE PagoID = @PagoID)
+    BEGIN
+      INSERT INTO Comprobantes (
+        PagoID,
+        SocioID,
+        MembresíaID,
+        NumeroComprobante,
+        FechaEmision,
+        MontoPago,
+        MedioPago,
+        NombreSocio,
+        EmailSocio,
+        TelefonoSocio,
+        NombrePlan,
+        DuracionPlan,
+        FechaInicio,
+        FechaVencimiento,
+        Concepto,
+        Estado,
+        FechaCreacion
+      )
+      VALUES (
+        @PagoID,
+        @SocioID,
+        @MembresíaID,
+        @NumeroComprobante,
+        GETDATE(),
+        @MontoPago,
+        @MedioPago,
+        @NombreSocio,
+        @EmailSocio,
+        @TelefonoSocio,
+        @NombrePlan,
+        @DuracionPlan,
+        @FechaInicio,
+        @FechaVencimiento,
+        @Concepto,
+        'Emitido',
+        GETDATE()
+      )
+    END
+  `)
+
 
     return new NextResponse(pdfBytes, {
       status: 200,

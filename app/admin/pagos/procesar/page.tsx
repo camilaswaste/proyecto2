@@ -77,7 +77,7 @@ function ProcesarPagoContent() {
       const response = await fetch(`/api/admin/socios?id=${socioID}`)
       if (response.ok) {
         const data = await response.json()
-        setSocio(Array.isArray(data) ? data[0] : data)
+        setSocio(data)
       }
     } catch (err) {
       console.error("Error al cargar socio:", err)
@@ -127,8 +127,17 @@ function ProcesarPagoContent() {
       })
 
       if (!membresiaResponse.ok) {
-        throw new Error("Error al asignar la membresía")
-      }
+  const errData = await membresiaResponse.json().catch(() => ({}))
+
+  // Caso esperado: socio ya tiene una membresía Vigente
+  if (membresiaResponse.status === 409) {
+    setError(errData.error || "El socio ya tiene una membresía vigente.")
+    return
+  }
+
+  throw new Error(errData.error || "Error al asignar la membresía")
+}
+
 
       router.push(`/admin/pagos/${pagoData.pagoID}`)
     } catch (err: any) {

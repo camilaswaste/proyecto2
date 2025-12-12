@@ -2,18 +2,19 @@
 import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
 
-// 🔹 GET: listado de pagos para el historial
-export async function GET(request: Request) {
+// GET: listado de pagos para el historial
+export async function GET() {
   try {
     const pool = await getConnection()
 
     const result = await pool.query(`
-      SELECT 
+      SELECT
         p.PagoID,
         p.SocioID,
-        p.MontoPago AS Monto,
+        p.MembresíaID,
+        p.MontoPago       AS Monto,
+        p.MedioPago       AS MetodoPago,
         p.FechaPago,
-        p.MedioPago AS MetodoPago,
         p.Concepto,
         p.NumeroComprobante,
         p.ComprobantePath,
@@ -31,62 +32,37 @@ export async function GET(request: Request) {
   }
 }
 
-// 🔹 POST: registrar un nuevo pago desde /admin/pagos/procesar
+// POST: registrar un nuevo pago desde /admin/pagos/procesar
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { socioID, monto, metodoPago, concepto } = body
+    const { socioID, monto, metodoPago, concepto, usuarioRegistro } = body
 
     if (!socioID || !monto || !metodoPago) {
-      return NextResponse.json(
-        { error: "Datos incompletos para registrar el pago" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
     }
 
     const pool = await getConnection()
 
-    // Generamos un número de comprobante simple
     const numeroComprobante = `COMP-${Date.now()}-${socioID}`
 
-    const insertResult = await pool
-      .request()
+    const result = await pool.request()
       .input("SocioID", socioID)
       .input("MontoPago", monto)
       .input("MedioPago", metodoPago)
-      .input("Concepto", concepto || null)
+      .input("Concepto", concepto ?? null)
       .input("NumeroComprobante", numeroComprobante)
+      .input("UsuarioRegistro", usuarioRegistro ?? null)
       .query(`
-        INSERT INTO Pagos (
-          SocioID, 
-          MontoPago, 
-          MedioPago, 
-          FechaPago, 
-          Concepto, 
-          NumeroComprobante
-        )
+        INSERT INTO Pagos (SocioID, MontoPago, MedioPago, Concepto, NumeroComprobante, UsuarioRegistro)
         OUTPUT INSERTED.PagoID
-        VALUES (
-          @SocioID, 
-          @MontoPago, 
-          @MedioPago, 
-          GETDATE(), 
-          @Concepto, 
-          @NumeroComprobante
-        );
+        VALUES (@SocioID, @MontoPago, @MedioPago, @Concepto, @NumeroComprobante, @UsuarioRegistro)
       `)
 
-    const pagoID = insertResult.recordset[0].PagoID
-
-    return NextResponse.json(
-      {
-        pagoID,
-        numeroComprobante,
-      },
-      { status: 201 }
-    )
+    const pagoID = result.recordset[0].PagoID
+    return NextResponse.json({ pagoID, numeroComprobante })
   } catch (error) {
     console.error("Error al registrar pago:", error)
-    return NextResponse.json({ error: "Error al registrar el pago" }, { status: 500 })
+    return NextResponse.json({ error: "Error al registrar pago" }, { status: 500 })
   }
 }

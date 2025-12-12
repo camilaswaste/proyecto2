@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
-import { Plus, Search, Edit, Trash2, QrCodeIcon } from "lucide-react"
+import { Plus, Search, Edit, Trash2, QrCodeIcon, Filter } from "lucide-react"
 import { CreditCard } from "lucide-react"
 import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
 import { useRouter } from "next/navigation"
+import { MembershipModal } from "@/components/membership-modal"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface PlanMembresia {
   PlanID: number
@@ -41,6 +43,7 @@ export default function AdminSociosPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [socios, setSocios] = useState<Socio[]>([])
   const [loading, setLoading] = useState(true)
+  const [filterEstadoMembresia, setFilterEstadoMembresia] = useState<string>("todos")
 
   const router = useRouter()
 
@@ -135,30 +138,78 @@ export default function AdminSociosPage() {
 
   const handleOpenMembresiaDialog = (socio: Socio) => {
     setMembresiaSocio(socio)
-    if (planes.length > 0) {
-      setSelectedPlanID(planes[0].PlanID)
-    } else {
-      setSelectedPlanID(0)
-    }
+    setSelectedPlanID(planes.length > 0 ? planes[0].PlanID : 0)
     setShowMembresiaDialog(true)
   }
 
-  const handleProcederPago = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleMembershipAction = async (action: "assign" | "pause" | "cancel" | "resume" | null, data?: any) => {
+    if (!membresiaSocio) return
 
-    if (!membresiaSocio || selectedPlanID === 0) {
-      alert("Error: Selección inválida.")
-      return
+    if (action === "assign") {
+      const params = new URLSearchParams({
+        socioID: membresiaSocio.SocioID.toString(),
+        planID: selectedPlanID.toString(),
+      })
+      setShowMembresiaDialog(false)
+      router.push(`/admin/pagos/procesar?${params.toString()}`)
+    } else if (action === "pause") {
+      try {
+        const res = await fetch("/api/admin/membresias/pausar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            socioID: membresiaSocio.SocioID,
+            dias: data.pauseDuration,
+            motivo: data.pauseReason,
+          }),
+        })
+
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.error || "No se pudo pausar")
+
+        alert(`Membresía pausada por ${data.pauseDuration} días.`)
+        setShowMembresiaDialog(false)
+        fetchSocios()
+      } catch (e: any) {
+        alert(e.message || "Error al pausar")
+      }
+    } else if (action === "cancel") {
+      try {
+        const res = await fetch("/api/admin/membresias/cancelar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            socioID: membresiaSocio.SocioID,
+            motivo: data.cancelReason,
+          }),
+        })
+
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.error || "No se pudo cancelar")
+
+        alert("Membresía cancelada.")
+        setShowMembresiaDialog(false)
+        fetchSocios()
+      } catch (e: any) {
+        alert(e.message || "Error al cancelar")
+      }
+    } else if (action === "resume") {
+      const extender = data?.extendVencimiento === "on" // checkbox manda "on"
+      const res = await fetch("/api/admin/membresias/reanudar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          socioID: membresiaSocio.SocioID,
+          extenderVencimiento: extender,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "No se pudo reanudar")
+
+      alert("Membresía reanudada ")
+      setShowMembresiaDialog(false)
+      fetchSocios()
     }
-
-    // This allows the admin to select the payment method before confirming the membership
-    const params = new URLSearchParams({
-      socioID: membresiaSocio.SocioID.toString(),
-      planID: selectedPlanID.toString(),
-    })
-
-    setShowMembresiaDialog(false)
-    router.push(`/admin/pagos/procesar?${params.toString()}`)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -229,20 +280,80 @@ export default function AdminSociosPage() {
     }
   }
 
-  const filteredSocios = socios.filter(
-    (socio) =>
+  const filteredSocios = socios.filter((socio) => {
+    const matchesSearch =
       socio.Nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       socio.Apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      socio.Email.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      socio.Email.toLowerCase().includes(searchTerm.toLowerCase())
+
+    const matchesEstado =
+      filterEstadoMembresia === "todos" ||
+      socio.EstadoMembresia === filterEstadoMembresia ||
+      (filterEstadoMembresia === "sin-plan" && !socio.EstadoMembresia)
+
+    return matchesSearch && matchesEstado
+  })
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "N/A"
-    // Formatear la fecha a un formato legible
     try {
       return new Date(dateString).toLocaleDateString()
     } catch {
       return "Error"
+    }
+  }
+
+  const formatRUT = (rut: string) => {
+    if (!rut) return "N/A"
+    const cleanRUT = rut.replace(/\./g, "").replace(/-/g, "")
+    const dv = cleanRUT.slice(-1)
+    const body = cleanRUT.slice(0, -1)
+
+    let formattedBody = ""
+    let counter = 0
+    for (let i = body.length - 1; i >= 0; i--) {
+      formattedBody = body[i] + formattedBody
+      counter++
+      if (counter === 3 && i !== 0) {
+        formattedBody = "." + formattedBody
+        counter = 0
+      }
+    }
+    return `${formattedBody}-${dv}`
+  }
+
+  const formatTelefono = (telefono: string) => {
+    if (!telefono) return "N/A"
+    const cleanPhone = telefono.replace(/\D/g, "")
+    if (cleanPhone.startsWith("56") && cleanPhone.length >= 11) {
+      const code = cleanPhone.slice(0, 2)
+      const mobile = cleanPhone.slice(2, 3)
+      const part1 = cleanPhone.slice(3, 7)
+      const part2 = cleanPhone.slice(7, 11)
+      return `+(${code}${mobile}) ${part1} ${part2}`
+    }
+    if (cleanPhone.length === 9) {
+      const part1 = cleanPhone.slice(0, 4)
+      const part2 = cleanPhone.slice(4)
+      return `+(569) ${part1} ${part2}`
+    }
+    return telefono
+  }
+
+  const getEstadoMembresiaColor = (estado: string | null) => {
+    switch (estado) {
+      case "Vigente":
+        return "bg-green-100 text-green-800 border-green-200"
+      case "Pausada":
+        return "bg-gray-400 text-gray-800 border-gray-300"
+      case "Vencida":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "Cancelada":
+        return "bg-red-100 text-red-800 border-red-200"
+      case "Suspendida":
+        return "bg-orange-100 text-orange-800 border-orange-200"
+      default:
+        return "bg-gray-100 text-gray-600 border-gray-200"
     }
   }
 
@@ -264,7 +375,6 @@ export default function AdminSociosPage() {
             <h1 className="text-3xl font-bold">Gestión de Socios</h1>
             <p className="text-muted-foreground">Administra los miembros del gimnasio</p>
           </div>
-          {/* Added onClick handler to open dialog */}
           <Button onClick={() => handleOpenDialog()}>
             <Plus className="h-4 w-4 mr-2" />
             Nuevo Socio
@@ -278,14 +388,33 @@ export default function AdminSociosPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nombre, email o teléfono..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+              <div className="flex gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nombre, email o teléfono..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="w-64">
+                  <Select value={filterEstadoMembresia} onValueChange={setFilterEstadoMembresia}>
+                    <SelectTrigger>
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Filtrar por estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos los estados</SelectItem>
+                      <SelectItem value="Vigente">Vigente</SelectItem>
+                      <SelectItem value="Pausada">Pausada</SelectItem>
+                      <SelectItem value="Vencida">Vencida</SelectItem>
+                      <SelectItem value="Cancelada">Cancelada</SelectItem>
+                      <SelectItem value="Suspendida">Suspendida</SelectItem>
+                      <SelectItem value="sin-plan">Sin plan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="border rounded-lg overflow-hidden">
@@ -307,42 +436,35 @@ export default function AdminSociosPage() {
                   <tbody>
                     {filteredSocios.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={10} className="p-8 text-center text-muted-foreground">
                           No se encontraron socios
                         </td>
                       </tr>
                     ) : (
                       filteredSocios.map((socio) => (
-                        <tr key={socio.SocioID} className="border-t">
-                          <td className="p-3">{socio.RUT}</td>
+                        <tr key={socio.SocioID} className="border-t hover:bg-muted/50 transition-colors">
+                          <td className="p-3 font-mono text-sm">{formatRUT(socio.RUT)}</td>
                           <td className="p-3">
                             {socio.Nombre} {socio.Apellido}
                           </td>
-                          <td className="p-3">{socio.Email}</td>
+                          <td className="p-3 text-sm">{socio.Email}</td>
                           <td className="p-3">
-                            {/* Mostrar Plan y Estado de Membresía */}
                             <p className="font-medium text-sm">{socio.NombrePlan || "Sin Plan"}</p>
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-xs font-medium ${
-                                socio.EstadoMembresia === "Vigente"
-                                  ? "bg-green-100 text-green-800"
-                                  : socio.EstadoMembresia === "Vencida"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-gray-100 text-gray-800"
-                              }`}
+                              className={`inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-xs font-medium border ${getEstadoMembresiaColor(
+                                socio.EstadoMembresia,
+                              )}`}
                             >
                               {socio.EstadoMembresia || "N/A"}
                             </span>
                           </td>
                           <td className="p-3">
-                            {/* Mostrar fecha de inicio */}
                             <p className="text-sm">{formatDate(socio.FechaInicio)}</p>
                           </td>
                           <td className="p-3">
-                            {/* Mostrar fecha de fin */}
                             <p className="text-sm">{formatDate(socio.FechaFin)}</p>
                           </td>
-                          <td className="p-3">{socio.Telefono || "N/A"}</td>
+                          <td className="p-3 text-sm font-mono">{formatTelefono(socio.Telefono)}</td>
                           <td className="p-3">
                             <span
                               className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -368,9 +490,14 @@ export default function AdminSociosPage() {
                           </td>
                           <td className="p-3">
                             <div className="flex gap-2">
-                              {/* Added onClick handlers for edit and delete */}
-                              <Button variant="ghost" size="icon" onClick={() => handleOpenMembresiaDialog(socio)}>
-                                <CreditCard className="h-4 w-4 blue-600" />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenMembresiaDialog(socio)}
+                                className="hover:bg-blue-50 transition-colors"
+                                title="Gestionar membresía"
+                              >
+                                <CreditCard className="h-4 w-4 text-blue-600" />
                               </Button>
                               <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(socio)}>
                                 <Edit className="h-4 w-4" />
@@ -390,7 +517,6 @@ export default function AdminSociosPage() {
           </CardContent>
         </Card>
 
-        {/* Added dialog form for creating/editing socios */}
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent>
             <DialogHeader>
@@ -502,10 +628,7 @@ export default function AdminSociosPage() {
                 {qrSocio.CodigoQR ? (
                   <>
                     <div className="p-4 border border-gray-300 rounded-lg bg-white shadow-xl">
-                      <QrCodeQuickChart
-                        value={qrSocio.CodigoQR} // Pasamos el valor único
-                        size={256} // Opcional: define el tamaño
-                      />
+                      <QrCodeQuickChart value={qrSocio.CodigoQR} size={256} />
                     </div>
                     <p className="text-sm text-muted-foreground text-center pt-2">
                       Este código se usa para el control de acceso.
@@ -519,63 +642,15 @@ export default function AdminSociosPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showMembresiaDialog} onOpenChange={setShowMembresiaDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                Proceder al Pago para {membresiaSocio?.Nombre} {membresiaSocio?.Apellido}
-              </DialogTitle>
-              <DialogClose onClose={() => setShowMembresiaDialog(false)} />
-            </DialogHeader>
-            <form onSubmit={handleProcederPago} className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Plan actual:
-                <span
-                  className={`font-semibold ml-1 ${membresiaSocio?.EstadoMembresia === "Vigente" ? "text-green-600" : "text-red-600"}`}
-                >
-                  {membresiaSocio?.NombrePlan || "Sin Plan"} ({membresiaSocio?.EstadoMembresia || "N/A"})
-                </span>
-              </p>
-
-              <div>
-                <Label htmlFor="selectedPlanID">Seleccionar Plan *</Label>
-                <select
-                  id="selectedPlanID"
-                  value={selectedPlanID === 0 ? "" : selectedPlanID}
-                  onChange={(e) => setSelectedPlanID(Number.parseInt(e.target.value))}
-                  className="w-full border rounded-md p-2"
-                  required
-                >
-                  {selectedPlanID === 0 && planes.length > 0 && (
-                    <option value="" disabled>
-                      Seleccione un plan
-                    </option>
-                  )}
-                  {planes.length === 0 ? (
-                    <option value="" disabled>
-                      Cargando planes...
-                    </option>
-                  ) : (
-                    planes.map((plan) => (
-                      <option key={plan.PlanID} value={plan.PlanID}>
-                        {plan.NombrePlan} (${plan.Precio.toLocaleString()} / {plan.DuracionDias} días)
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setShowMembresiaDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={selectedPlanID === 0}>
-                  Proceder al Pago
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <MembershipModal
+          open={showMembresiaDialog}
+          onOpenChange={setShowMembresiaDialog}
+          socio={membresiaSocio}
+          planes={planes}
+          selectedPlanID={selectedPlanID}
+          onPlanChange={setSelectedPlanID}
+          onSubmit={handleMembershipAction}
+        />
       </div>
     </DashboardLayout>
   )

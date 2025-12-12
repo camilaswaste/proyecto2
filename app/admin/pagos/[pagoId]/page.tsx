@@ -5,12 +5,13 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Printer, CheckCircle2, Download } from "lucide-react"
+import { ArrowLeft,ArrowRight, Printer, CheckCircle2, Download } from "lucide-react"
 
 // Interfaz que coincide con tu API real (/api/pagos/obtener)
 interface ComprobanteData {
   PagoID: number
   NumeroComprobante?: string
+  ComprobantePath?: string | null
   FechaPago: string
   Monto: number
   MetodoPago: string
@@ -146,18 +147,22 @@ export default function ComprobantePage() {
           <h1 className="text-2xl font-bold text-slate-900">Comprobante #{data.PagoID}</h1>
         </div>
         <div className="flex gap-2">
-          <Link href="/admin/pagos/procesar">
+          <Link href="/admin/pagos">
             <Button variant="outline">
               <ArrowLeft className="w-4 h-4 mr-2" /> Nuevo Pago
             </Button>
           </Link>
-          <Button onClick={handlePrint} className="bg-slate-900 text-white hover:bg-slate-800">
-            <Printer className="w-4 h-4 mr-2" /> Imprimir / PDF
-          </Button>
 
           <Button onClick={handleDownloadPDF} variant="outline">
             <Download className="w-4 h-4 mr-2" /> Descargar PDF
           </Button>
+
+               <Link href="/admin/socios">
+            <Button variant="outline">
+              <ArrowRight className="w-4 h-4 mr-2" /> Socios
+            </Button>
+          </Link>
+
 
 
         </div>
