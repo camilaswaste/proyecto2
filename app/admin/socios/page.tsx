@@ -1,18 +1,27 @@
 "use client"
 
+import type React from "react"
+
+import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatPhone, formatRUT, validatePhone, validateRUT } from "@/lib/validations"
-import { Edit, Plus, QrCodeIcon, Search, Trash2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
+import { Plus, Search, Edit, Trash2, QrCodeIcon, Filter, ChevronLeft, ChevronRight } from "lucide-react"
+import { CreditCard } from "lucide-react"
+import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
 import { useRouter } from "next/navigation"
-import type React from "react"
-import { useEffect, useState } from "react"
+import { MembershipModal } from "@/components/membership-modal"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+interface PlanMembresia {
+  PlanID: number
+  NombrePlan: string
+  Precio: number
+  DuracionDias: number
+}
 interface Socio {
   SocioID: number
   RUT: string
@@ -34,8 +43,16 @@ export default function AdminSociosPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [socios, setSocios] = useState<Socio[]>([])
   const [loading, setLoading] = useState(true)
+  const [filterEstadoMembresia, setFilterEstadoMembresia] = useState<string>("todos")
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
+
+  const router = useRouter()
+
   const [showDialog, setShowDialog] = useState(false)
   const [editingSocio, setEditingSocio] = useState<Socio | null>(null)
+  const [showQrDialog, setShowQrDialog] = useState(false)
+  const [qrSocio, setQrSocio] = useState<Socio | null>(null)
   const [formData, setFormData] = useState({
     RUT: "",
     Nombre: "",
@@ -46,16 +63,15 @@ export default function AdminSociosPage() {
     Direccion: "",
     EstadoSocio: "Activo",
   })
-  const [rutError, setRutError] = useState("")
-  const [phoneError, setPhoneError] = useState("")
 
-  const router = useRouter()
-
-  const [showQrDialog, setShowQrDialog] = useState(false)
-  const [qrSocio, setQrSocio] = useState<Socio | null>(null)
+  const [showMembresiaDialog, setShowMembresiaDialog] = useState(false)
+  const [membresiaSocio, setMembresiaSocio] = useState<Socio | null>(null)
+  const [planes, setPlanes] = useState<PlanMembresia[]>([])
+  const [selectedPlanID, setSelectedPlanID] = useState<number>(0)
 
   useEffect(() => {
     fetchSocios()
+    fetchPlanes()
   }, [])
 
   const fetchSocios = async () => {
@@ -73,9 +89,6 @@ export default function AdminSociosPage() {
   }
 
   const handleOpenDialog = (socio?: Socio) => {
-    setRutError("")
-    setPhoneError("")
-
     if (socio) {
       setEditingSocio(socio)
       setFormData({
@@ -109,48 +122,100 @@ export default function AdminSociosPage() {
     setShowQrDialog(true)
   }
 
-  const handleRUTChange = (value: string) => {
-    const formatted = formatRUT(value)
-    setFormData({ ...formData, RUT: formatted })
-
-    if (formatted.length >= 11) {
-      if (!validateRUT(formatted)) {
-        setRutError("RUT inválido. Verifica el dígito verificador.")
-      } else {
-        setRutError("")
+  const fetchPlanes = async () => {
+    try {
+      const response = await fetch("/api/admin/membresias")
+      if (response.ok) {
+        const data = await response.json()
+        const activePlanes = data.filter((p: PlanMembresia & { Activo: boolean }) => p.Activo)
+        setPlanes(activePlanes)
+        if (activePlanes.length > 0) {
+          setSelectedPlanID(activePlanes[0].PlanID)
+        }
       }
-    } else {
-      setRutError("")
+    } catch (error) {
+      console.error("Error al cargar planes:", error)
     }
   }
 
-  const handlePhoneChange = (value: string) => {
-    const formatted = formatPhone(value)
-    setFormData({ ...formData, Telefono: formatted })
+  const handleOpenMembresiaDialog = (socio: Socio) => {
+    setMembresiaSocio(socio)
+    setSelectedPlanID(planes.length > 0 ? planes[0].PlanID : 0)
+    setShowMembresiaDialog(true)
+  }
 
-    if (formatted.length > 0 && formatted.length >= 17) {
-      if (!validatePhone(formatted)) {
-        setPhoneError("Teléfono inválido. Formato: (+56) 9 xxxx xxxx")
-      } else {
-        setPhoneError("")
+  const handleMembershipAction = async (action: "assign" | "pause" | "cancel" | "resume" | null, data?: any) => {
+    if (!membresiaSocio) return
+
+    if (action === "assign") {
+      const params = new URLSearchParams({
+        socioID: membresiaSocio.SocioID.toString(),
+        planID: selectedPlanID.toString(),
+      })
+      setShowMembresiaDialog(false)
+      router.push(`/admin/pagos/procesar?${params.toString()}`)
+    } else if (action === "pause") {
+      try {
+        const res = await fetch("/api/admin/membresias/pausar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            socioID: membresiaSocio.SocioID,
+            dias: data.pauseDuration,
+            motivo: data.pauseReason,
+          }),
+        })
+
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.error || "No se pudo pausar")
+
+        alert(`Membresía pausada por ${data.pauseDuration} días.`)
+        setShowMembresiaDialog(false)
+        fetchSocios()
+      } catch (e: any) {
+        alert(e.message || "Error al pausar")
       }
-    } else {
-      setPhoneError("")
+    } else if (action === "cancel") {
+      try {
+        const res = await fetch("/api/admin/membresias/cancelar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            socioID: membresiaSocio.SocioID,
+            motivo: data.cancelReason,
+          }),
+        })
+
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.error || "No se pudo cancelar")
+
+        alert("Membresía cancelada.")
+        setShowMembresiaDialog(false)
+        fetchSocios()
+      } catch (e: any) {
+        alert(e.message || "Error al cancelar")
+      }
+    } else if (action === "resume") {
+      const extender = data?.extendVencimiento === "on" // checkbox manda "on"
+      const res = await fetch("/api/admin/membresias/reanudar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          socioID: membresiaSocio.SocioID,
+          extenderVencimiento: extender,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "No se pudo reanudar")
+
+      alert("Membresía reanudada ")
+      setShowMembresiaDialog(false)
+      fetchSocios()
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!validateRUT(formData.RUT)) {
-      alert("Por favor ingresa un RUT válido en formato xx.xxx.xxx-x")
-      return
-    }
-
-    if (formData.Telefono && !validatePhone(formData.Telefono)) {
-      alert("Por favor ingresa un teléfono válido en formato (+56) 9 xxxx xxxx")
-      return
-    }
 
     try {
       const validationResponse = await fetch("/api/auth/validate-account", {
@@ -217,6 +282,29 @@ export default function AdminSociosPage() {
     }
   }
 
+  const filteredSocios = socios.filter((socio) => {
+    const matchesSearch =
+      socio.Nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      socio.Apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      socio.Email.toLowerCase().includes(searchTerm.toLowerCase())
+
+    const matchesEstado =
+      filterEstadoMembresia === "todos" ||
+      socio.EstadoMembresia === filterEstadoMembresia ||
+      (filterEstadoMembresia === "sin-plan" && !socio.EstadoMembresia)
+
+    return matchesSearch && matchesEstado
+  })
+
+  const totalPages = Math.ceil(filteredSocios.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedSocios = filteredSocios.slice(startIndex, endIndex)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, filterEstadoMembresia])
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "N/A"
     try {
@@ -226,12 +314,59 @@ export default function AdminSociosPage() {
     }
   }
 
-  const filteredSocios = socios.filter(
-    (socio) =>
-      socio.Nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      socio.Apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      socio.Email.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const formatRUT = (rut: string) => {
+    if (!rut) return "N/A"
+    const cleanRUT = rut.replace(/\./g, "").replace(/-/g, "")
+    const dv = cleanRUT.slice(-1)
+    const body = cleanRUT.slice(0, -1)
+
+    let formattedBody = ""
+    let counter = 0
+    for (let i = body.length - 1; i >= 0; i--) {
+      formattedBody = body[i] + formattedBody
+      counter++
+      if (counter === 3 && i !== 0) {
+        formattedBody = "." + formattedBody
+        counter = 0
+      }
+    }
+    return `${formattedBody}-${dv}`
+  }
+
+  const formatTelefono = (telefono: string) => {
+    if (!telefono) return "N/A"
+    const cleanPhone = telefono.replace(/\D/g, "")
+    if (cleanPhone.startsWith("56") && cleanPhone.length >= 11) {
+      const code = cleanPhone.slice(0, 2)
+      const mobile = cleanPhone.slice(2, 3)
+      const part1 = cleanPhone.slice(3, 7)
+      const part2 = cleanPhone.slice(7, 11)
+      return `+(${code}${mobile}) ${part1} ${part2}`
+    }
+    if (cleanPhone.length === 9) {
+      const part1 = cleanPhone.slice(0, 4)
+      const part2 = cleanPhone.slice(4)
+      return `+(569) ${part1} ${part2}`
+    }
+    return telefono
+  }
+
+  const getEstadoMembresiaColor = (estado: string | null) => {
+    switch (estado) {
+      case "Vigente":
+        return "bg-green-100 text-green-800 border-green-200"
+      case "Pausada":
+        return "bg-gray-400 text-gray-800 border-gray-300"
+      case "Vencida":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "Cancelada":
+        return "bg-red-100 text-red-800 border-red-200"
+      case "Suspendida":
+        return "bg-orange-100 text-orange-800 border-orange-200"
+      default:
+        return "bg-gray-100 text-gray-600 border-gray-200"
+    }
+  }
 
   if (loading) {
     return (
@@ -264,14 +399,33 @@ export default function AdminSociosPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nombre, email o teléfono..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+              <div className="flex gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nombre, email o teléfono..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="w-64">
+                  <Select value={filterEstadoMembresia} onValueChange={setFilterEstadoMembresia}>
+                    <SelectTrigger>
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Filtrar por estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos los estados</SelectItem>
+                      <SelectItem value="Vigente">Vigente</SelectItem>
+                      <SelectItem value="Pausada">Pausada</SelectItem>
+                      <SelectItem value="Vencida">Vencida</SelectItem>
+                      <SelectItem value="Cancelada">Cancelada</SelectItem>
+                      <SelectItem value="Suspendida">Suspendida</SelectItem>
+                      <SelectItem value="sin-plan">Sin plan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="border rounded-lg overflow-hidden">
@@ -281,6 +435,9 @@ export default function AdminSociosPage() {
                       <th className="text-left p-3 font-medium">RUT</th>
                       <th className="text-left p-3 font-medium">Nombre</th>
                       <th className="text-left p-3 font-medium">Email</th>
+                      <th className="text-left p-3 font-medium">Plan/Estado</th>
+                      <th className="text-left p-3 font-medium">Inicio Plan</th>
+                      <th className="text-left p-3 font-medium">Fin Plan</th>
                       <th className="text-left p-3 font-medium">Teléfono</th>
                       <th className="text-left p-3 font-medium">Estado</th>
                       <th className="text-left p-3 font-medium">QR</th>
@@ -288,21 +445,37 @@ export default function AdminSociosPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSocios.length === 0 ? (
+                    {paginatedSocios.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={10} className="p-8 text-center text-muted-foreground">
                           No se encontraron socios
                         </td>
                       </tr>
                     ) : (
-                      filteredSocios.map((socio) => (
-                        <tr key={socio.SocioID} className="border-t">
-                          <td className="p-3">{socio.RUT}</td>
+                      paginatedSocios.map((socio) => (
+                        <tr key={socio.SocioID} className="border-t hover:bg-muted/50 transition-colors">
+                          <td className="p-3 font-mono text-sm">{formatRUT(socio.RUT)}</td>
                           <td className="p-3">
                             {socio.Nombre} {socio.Apellido}
                           </td>
-                          <td className="p-3">{socio.Email}</td>
-                          <td className="p-3">{socio.Telefono || "N/A"}</td>
+                          <td className="p-3 text-sm">{socio.Email}</td>
+                          <td className="p-3">
+                            <p className="font-medium text-sm">{socio.NombrePlan || "Sin Plan"}</p>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-xs font-medium border ${getEstadoMembresiaColor(
+                                socio.EstadoMembresia,
+                              )}`}
+                            >
+                              {socio.EstadoMembresia || "N/A"}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <p className="text-sm">{formatDate(socio.FechaInicio)}</p>
+                          </td>
+                          <td className="p-3">
+                            <p className="text-sm">{formatDate(socio.FechaFin)}</p>
+                          </td>
+                          <td className="p-3 text-sm font-mono">{formatTelefono(socio.Telefono)}</td>
                           <td className="p-3">
                             <span
                               className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -328,6 +501,15 @@ export default function AdminSociosPage() {
                           </td>
                           <td className="p-3">
                             <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenMembresiaDialog(socio)}
+                                className="hover:bg-blue-50 transition-colors"
+                                title="Gestionar membresía"
+                              >
+                                <CreditCard className="h-4 w-4 text-blue-600" />
+                              </Button>
                               <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(socio)}>
                                 <Edit className="h-4 w-4" />
                               </Button>
@@ -342,6 +524,61 @@ export default function AdminSociosPage() {
                   </tbody>
                 </table>
               </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {startIndex + 1} - {Math.min(endIndex, filteredSocios.length)} de {filteredSocios.length}{" "}
+                    socios
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </Button>
+
+                    <div className="flex gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                        if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
+                          return (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(page)}
+                              className="w-10"
+                            >
+                              {page}
+                            </Button>
+                          )
+                        } else if (page === currentPage - 2 || page === currentPage + 2) {
+                          return (
+                            <span key={page} className="px-2 py-1 text-muted-foreground">
+                              ...
+                            </span>
+                          )
+                        }
+                        return null
+                      })}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -359,13 +596,9 @@ export default function AdminSociosPage() {
                   <Input
                     id="RUT"
                     value={formData.RUT}
-                    onChange={(e) => handleRUTChange(e.target.value)}
-                    placeholder="12.345.678-9"
+                    onChange={(e) => setFormData({ ...formData, RUT: e.target.value })}
                     required
-                    maxLength={12}
                   />
-                  {rutError && <p className="text-sm text-red-600 mt-1">{rutError}</p>}
-                  <p className="text-xs text-muted-foreground mt-1">Formato: xx.xxx.xxx-x</p>
                 </div>
                 <div>
                   <Label htmlFor="FechaNacimiento">Fecha de Nacimiento</Label>
@@ -412,12 +645,8 @@ export default function AdminSociosPage() {
                 <Input
                   id="Telefono"
                   value={formData.Telefono}
-                  onChange={(e) => handlePhoneChange(e.target.value)}
-                  placeholder="(+56) 9 xxxx xxxx"
-                  maxLength={17}
+                  onChange={(e) => setFormData({ ...formData, Telefono: e.target.value })}
                 />
-                {phoneError && <p className="text-sm text-red-600 mt-1">{phoneError}</p>}
-                <p className="text-xs text-muted-foreground mt-1">Formato: (+56) 9 xxxx xxxx</p>
               </div>
               <div>
                 <Label htmlFor="Direccion">Dirección</Label>
@@ -435,10 +664,10 @@ export default function AdminSociosPage() {
                   onChange={(e) => setFormData({ ...formData, EstadoSocio: e.target.value })}
                   className="w-full border rounded-md p-2"
                 >
-                  <option value="Activo">Activo</option>
                   <option value="Suspendido">Suspendido</option>
                   <option value="Moroso">Moroso</option>
                   <option value="Inactivo">Inactivo</option>
+                  <option value="Activo">Activo</option>
                 </select>
               </div>
               <div className="flex justify-end gap-2">
@@ -478,6 +707,16 @@ export default function AdminSociosPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        <MembershipModal
+          open={showMembresiaDialog}
+          onOpenChange={setShowMembresiaDialog}
+          socio={membresiaSocio}
+          planes={planes}
+          selectedPlanID={selectedPlanID}
+          onPlanChange={setSelectedPlanID}
+          onSubmit={handleMembershipAction}
+        />
       </div>
     </DashboardLayout>
   )

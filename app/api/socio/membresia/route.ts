@@ -1,6 +1,10 @@
-import { getConnection } from "@/lib/db"
 import { NextResponse } from "next/server"
+import { getConnection } from "@/lib/db"
+import sql from "mssql" 
 
+// --------------------------------------------------------------------------------
+// GET: Obtiene la membresía activa del socio (Para mostrar en el perfil o admin)
+// --------------------------------------------------------------------------------
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -25,11 +29,9 @@ export async function GET(request: Request) {
           p.Descripcion,
           p.Precio,
           p.DuracionDias,
-          p.Beneficios,
-          s.CodigoQR
+          p.Beneficios
         FROM Membresías m 
         INNER JOIN PlanesMembresía p ON m.PlanID = p.PlanID
-        INNER JOIN Socios s ON m.SocioID = s.SocioID
         WHERE m.SocioID = @socioID
         AND m.Estado = 'Vigente' 
       `)
@@ -41,6 +43,10 @@ export async function GET(request: Request) {
   }
 }
 
+// --------------------------------------------------------------------------------
+// POST: PASO 1 - REGISTRA EL PAGO Y RETORNA EL ID
+// No asigna la membresía ni cambia estados todavía. Eso se hace en el paso 2.
+// --------------------------------------------------------------------------------
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -67,13 +73,14 @@ export async function POST(request: Request) {
     }
 
     const plan = planResult.recordset[0]
-
+    
     // 2. Registrar el Pago (INSERT con OUTPUT para obtener el ID)
+    // El concepto indica que falta la asignación.
     const pagoResult = await pool
       .request()
       .input("socioID", socioID)
       .input("monto", plan.Precio)
-      .input("metodoPago", "Efectivo")
+      .input("metodoPago", "Efectivo") // Se asume efectivo por defecto en este paso
       .input("concepto", `Pago de Membresía: ${plan.NombrePlan} - PENDIENTE DE ASIGNACIÓN`)
       .query(`
         INSERT INTO Pagos (SocioID, FechaPago, MontoPago, MedioPago, Concepto) 
@@ -87,10 +94,11 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: "Pago registrado. Redirigiendo a comprobante para asignación final.",
-      pagoID: newPagoID,
-      planID: planID,
-      socioID: socioID,
+      pagoID: newPagoID, 
+      planID: planID, 
+      socioID: socioID, 
     })
+
   } catch (error) {
     console.error("Error al registrar pago:", error)
     return NextResponse.json({ error: "Error al registrar el pago" }, { status: 500 })
