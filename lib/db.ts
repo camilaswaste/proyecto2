@@ -2,7 +2,7 @@
 import sql from "mssql"
 
 const config: sql.config = {
-  server: process.env.SQL_SERVER_HOST || "mundofitness.c78euaoee16x.us-east-1.rds.amazonaws.com",
+  server: process.env.SQL_SERVER_HOST || "mundofitness.cxekoi0g4d4y.us-east-1.rds.amazonaws.com",
   database: process.env.SQL_SERVER_DATABASE || "MundoFitness",
   user: process.env.SQL_SERVER_USER || "admin",
   password: process.env.SQL_SERVER_PASSWORD || "admin666",

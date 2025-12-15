@@ -14,6 +14,7 @@ export type TipoEvento =
   | "membresia_asignada"
   | "membresia_actualizada"
   | "pago_registrado"
+  | "membresia_inactiva"
 
 interface NotificacionParams {
   tipoUsuario: "Admin" | "Entrenador" | "Socio"

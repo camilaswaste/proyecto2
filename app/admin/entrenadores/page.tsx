@@ -4,12 +4,12 @@ import type React from "react"
 
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Card, CardContent } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatPhone, validatePhone } from "@/lib/validations"
-import { Edit, Plus, Search, Trash2 } from "lucide-react"
+import { Edit, Plus, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 
 interface Entrenador {
@@ -21,6 +21,7 @@ interface Entrenador {
   Telefono: string
   Especialidad: string
   Activo: boolean
+  FotoURL: string
 }
 
 export default function AdminEntrenadoresPage() {
@@ -39,6 +40,8 @@ export default function AdminEntrenadoresPage() {
     biografia: "",
   })
   const [phoneError, setPhoneError] = useState("")
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string>("")
 
   useEffect(() => {
     fetchEntrenadores()
@@ -49,6 +52,10 @@ export default function AdminEntrenadoresPage() {
       const response = await fetch("/api/admin/entrenadores")
       if (response.ok) {
         const data = await response.json()
+        console.log("[v0] Entrenadores cargados:", data)
+        data.forEach((e: Entrenador) => {
+          console.log(`[v0] Entrenador ${e.Nombre}: FotoURL =`, e.FotoURL)
+        })
         setEntrenadores(data)
       }
     } catch (error) {
@@ -60,9 +67,12 @@ export default function AdminEntrenadoresPage() {
 
   const handleOpenDialog = (entrenador?: Entrenador) => {
     setPhoneError("")
+    setImageFile(null)
+    setImagePreview("")
 
     if (entrenador) {
       setEditingEntrenador(entrenador)
+      setImagePreview(entrenador.FotoURL || "")
       setFormData({
         nombre: entrenador.Nombre,
         apellido: entrenador.Apellido,
@@ -102,6 +112,22 @@ export default function AdminEntrenadoresPage() {
     }
   }
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("La imagen no puede superar 5MB")
+        return
+      }
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -134,9 +160,37 @@ export default function AdminEntrenadoresPage() {
     }
 
     try {
+      let fotoURL = editingEntrenador?.FotoURL || ""
+
+      if (imageFile) {
+        console.log("[v0] Uploading image file:", imageFile.name)
+        const formDataImg = new FormData()
+        formDataImg.append("file", imageFile)
+
+        const uploadResponse = await fetch("/api/upload", {
+          method: "POST",
+          body: formDataImg,
+        })
+
+        if (uploadResponse.ok) {
+          const { url } = await uploadResponse.json()
+          console.log("[v0] Image uploaded successfully, URL:", url)
+          fotoURL = url
+        } else {
+          const errorData = await uploadResponse.json()
+          console.error("[v0] Upload error:", errorData)
+          alert("Error al subir la imagen: " + (errorData.error || "Error desconocido"))
+          return
+        }
+      }
+
+      console.log("[v0] Final fotoURL to save:", fotoURL)
+
       const body = editingEntrenador
-        ? { ...formData, entrenadorID: editingEntrenador.EntrenadorID, estado: editingEntrenador.Activo }
-        : formData
+        ? { ...formData, entrenadorID: editingEntrenador.EntrenadorID, estado: editingEntrenador.Activo, fotoURL }
+        : { ...formData, fotoURL }
+
+      console.log("[v0] Sending request body:", body)
 
       const url = "/api/admin/entrenadores"
       const method = editingEntrenador ? "PUT" : "POST"
@@ -149,6 +203,8 @@ export default function AdminEntrenadoresPage() {
 
       if (response.ok) {
         const result = await response.json()
+        console.log("[v0] Server response:", result)
+
         if (!editingEntrenador && result.tempPassword) {
           alert(
             `Entrenador creado exitosamente.\n\nCredenciales de acceso:\nEmail: ${formData.email}\nContraseña temporal: ${result.tempPassword}\n\nIMPORTANTE: El entrenador debe cambiar su contraseña al iniciar sesión por primera vez.\nPor favor, comparte estas credenciales de forma segura.`,
@@ -157,13 +213,15 @@ export default function AdminEntrenadoresPage() {
           alert("Entrenador actualizado exitosamente")
         }
         setShowDialog(false)
-        fetchEntrenadores()
+
+        await fetchEntrenadores()
       } else {
         const error = await response.json()
+        console.error("[v0] Server error:", error)
         alert(error.error || "Error al guardar entrenador")
       }
     } catch (error) {
-      console.error("Error:", error)
+      console.error("[v0] Error:", error)
       alert("Error al guardar entrenador")
     }
   }
@@ -190,6 +248,8 @@ export default function AdminEntrenadoresPage() {
       entrenador.Email.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
+  const skeletonCount = filteredEntrenadores.length > 0 ? (4 - (filteredEntrenadores.length % 4)) % 4 : 0
+
   if (loading) {
     return (
       <DashboardLayout role="Administrador">
@@ -214,85 +274,140 @@ export default function AdminEntrenadoresPage() {
           </Button>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Lista de Entrenadores</CardTitle>
-            <CardDescription>Total: {entrenadores.length} entrenadores</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar entrenador..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="text-left p-3 font-medium">Nombre</th>
-                      <th className="text-left p-3 font-medium">Especialidad</th>
-                      <th className="text-left p-3 font-medium">Email</th>
-                      <th className="text-left p-3 font-medium">Estado</th>
-                      <th className="text-left p-3 font-medium">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredEntrenadores.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                          No se encontraron entrenadores
-                        </td>
-                      </tr>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {filteredEntrenadores.length === 0 ? (
+            <Card className="col-span-full">
+              <CardContent className="p-8 text-center text-muted-foreground">
+                No se encontraron entrenadores
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {filteredEntrenadores.map((entrenador) => (
+                <Card key={entrenador.EntrenadorID} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <div className="relative h-48 bg-gradient-to-br from-red-500 to-red-700">
+                    {entrenador.FotoURL ? (
+                      <>
+                        {console.log(
+                          "[v0] Rendering image for entrenador:",
+                          entrenador.EntrenadorID,
+                          "URL:",
+                          entrenador.FotoURL,
+                        )}
+                        <img
+                          src={entrenador.FotoURL || "/placeholder.svg"}
+                          alt={`${entrenador.Nombre} ${entrenador.Apellido}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            console.error("[v0] Image failed to load:", entrenador.FotoURL)
+                            e.currentTarget.style.display = "none"
+                          }}
+                          onLoad={() => console.log("[v0] Image loaded successfully:", entrenador.FotoURL)}
+                        />
+                      </>
                     ) : (
-                      filteredEntrenadores.map((entrenador) => (
-                        <tr key={entrenador.EntrenadorID} className="border-t">
-                          <td className="p-3 font-medium">
-                            {entrenador.Nombre} {entrenador.Apellido}
-                          </td>
-                          <td className="p-3">{entrenador.Especialidad || "N/A"}</td>
-                          <td className="p-3">{entrenador.Email}</td>
-                          <td className="p-3">
-                            <span
-                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                entrenador.Activo ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {entrenador.Activo ? "Activo" : "Inactivo"}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex gap-2">
-                              <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(entrenador)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleDelete(entrenador.EntrenadorID)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                      <div className="flex items-center justify-center h-full">
+                        <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                          <span className="text-4xl font-bold text-white">
+                            {entrenador.Nombre[0]}
+                            {entrenador.Apellido[0]}
+                          </span>
+                        </div>
+                      </div>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                    <div className="absolute top-3 right-3">
+                      <span
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm ${
+                          entrenador.Activo ? "bg-green-500/90 text-white" : "bg-gray-500/90 text-white"
+                        }`}
+                      >
+                        {entrenador.Activo ? "Activo" : "Inactivo"}
+                      </span>
+                    </div>
+                  </div>
+                  <CardContent className="p-6">
+                    <h3 className="text-xl font-bold mb-2">
+                      {entrenador.Nombre} {entrenador.Apellido}
+                    </h3>
+                    <div className="space-y-2 mb-4">
+                      <p className="text-sm text-muted-foreground flex items-center gap-2">
+                        <span className="font-medium">Especialidad:</span>
+                        <span>{entrenador.Especialidad || "N/A"}</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">{entrenador.Email}</p>
+                      {entrenador.Telefono && <p className="text-sm text-muted-foreground">{entrenador.Telefono}</p>}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1 bg-transparent"
+                        onClick={() => handleOpenDialog(entrenador)}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Editar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="text-destructive hover:text-destructive bg-transparent"
+                        onClick={() => handleDelete(entrenador.EntrenadorID)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {Array.from({ length: skeletonCount }).map((_, index) => (
+                <Card key={`skeleton-${index}`} className="overflow-hidden opacity-50 animate-pulse">
+                  <div className="relative h-48 bg-gradient-to-br from-gray-300 to-gray-400" />
+                  <CardContent className="p-6">
+                    <div className="h-6 bg-gray-300 rounded mb-4 w-3/4" />
+                    <div className="space-y-2 mb-4">
+                      <div className="h-4 bg-gray-200 rounded w-full" />
+                      <div className="h-4 bg-gray-200 rounded w-2/3" />
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="h-10 bg-gray-200 rounded flex-1" />
+                      <div className="h-10 w-10 bg-gray-200 rounded" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </>
+          )}
+        </div>
 
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingEntrenador ? "Editar Entrenador" : "Nuevo Entrenador"}</DialogTitle>
-              <DialogClose onClose={() => setShowDialog(false)} />
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Foto de Perfil</Label>
+                <div className="flex items-center gap-4">
+                  <div className="w-24 h-24 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                    {imagePreview ? (
+                      <img
+                        src={imagePreview || "/placeholder.svg"}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-2xl font-bold text-muted-foreground">
+                        {formData.nombre[0] || "?"}
+                        {formData.apellido[0] || ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <Input type="file" accept="image/*" onChange={handleImageChange} className="cursor-pointer" />
+                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG o GIF. Máximo 5MB.</p>
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="nombre">Nombre *</Label>

@@ -12,21 +12,27 @@ export async function GET() {
         c.NombreClase,
         c.Descripcion,
         c.EntrenadorID,
-        u.Nombre + ' ' + u.Apellido as NombreEntrenador,
+        CONCAT(u.Nombre, ' ', u.Apellido) as NombreEntrenador,
         c.DiaSemana,
         c.HoraInicio,
         c.HoraFin,
         c.CupoMaximo,
         c.Activa as Estado,
-        c.TipoClase,
-        c.NumeroSemanas,
+        c.FechaCreacion,
         c.FechaInicio,
-        c.FechaFin
+        c.FechaFin,
+        c.Categoria,
+        (SELECT COUNT(*) 
+         FROM ReservasClases r 
+         WHERE r.ClaseID = c.ClaseID 
+           AND r.Estado != 'Cancelada'
+           AND r.FechaClase >= CAST(GETDATE() AS DATE)
+        ) AS CuposOcupados
       FROM Clases c
       INNER JOIN Entrenadores e ON c.EntrenadorID = e.EntrenadorID
       INNER JOIN Usuarios u ON e.UsuarioID = u.UsuarioID
       WHERE c.Activa = 1
-      ORDER BY c.NombreClase, c.DiaSemana, c.HoraInicio ASC
+      ORDER BY c.DiaSemana, c.HoraInicio ASC
     `)
 
     const groupedClases = result.recordset.reduce((acc: any[], clase: any) => {
@@ -35,15 +41,21 @@ export async function GET() {
           c.NombreClase === clase.NombreClase &&
           c.HoraInicio === clase.HoraInicio &&
           c.HoraFin === clase.HoraFin &&
-          c.EntrenadorID === clase.EntrenadorID,
+          c.EntrenadorID === clase.EntrenadorID &&
+          c.FechaInicio === clase.FechaInicio &&
+          c.FechaFin === clase.FechaFin,
       )
 
       if (existing) {
         existing.DiasSemana.push(clase.DiaSemana)
+        existing.ClaseIDs.push(clase.ClaseID)
+        existing.CuposOcupados = (existing.CuposOcupados || 0) + (clase.CuposOcupados || 0)
       } else {
         acc.push({
           ...clase,
           DiasSemana: [clase.DiaSemana],
+          ClaseIDs: [clase.ClaseID],
+          CuposOcupados: clase.CuposOcupados || 0,
         })
       }
 
@@ -68,9 +80,9 @@ export async function POST(request: Request) {
       HoraInicio,
       HoraFin,
       CupoMaximo,
-      TipoClase,
-      NumeroSemanas,
       FechaInicio,
+      FechaFin,
+      Categoria,
     } = body
 
     if (
@@ -80,9 +92,15 @@ export async function POST(request: Request) {
       DiasSemana.length === 0 ||
       !HoraInicio ||
       !HoraFin ||
-      !CupoMaximo
+      !CupoMaximo ||
+      !FechaInicio ||
+      !FechaFin
     ) {
       return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 })
+    }
+
+    if (new Date(FechaFin) <= new Date(FechaInicio)) {
+      return NextResponse.json({ error: "La fecha de fin debe ser posterior a la fecha de inicio" }, { status: 400 })
     }
 
     const pool = await getConnection()
@@ -93,6 +111,8 @@ export async function POST(request: Request) {
         .input("DiaSemana", dia)
         .input("HoraInicio", HoraInicio)
         .input("HoraFin", HoraFin)
+        .input("FechaInicio", FechaInicio)
+        .input("FechaFin", FechaFin)
         .query(`
           SELECT COUNT(*) as Conflictos
           FROM Clases
@@ -103,66 +123,36 @@ export async function POST(request: Request) {
               (@HoraFin > HoraInicio AND @HoraFin <= HoraFin) OR
               (@HoraInicio <= HoraInicio AND @HoraFin >= HoraFin)
             )
+            AND (
+              (@FechaInicio <= FechaFin AND @FechaFin >= FechaInicio)
+            )
         `)
 
       if (conflictoClase.recordset[0].Conflictos > 0) {
         return NextResponse.json(
-          { error: `Ya existe una clase grupal el ${dia} en ese horario. No se pueden tener dos clases simultáneas.` },
+          { error: `Ya existe una clase el ${dia} en ese horario para las fechas seleccionadas` },
           { status: 409 },
         )
       }
     }
 
-    let fechaFin = null
-    if (TipoClase === "Temporal" && NumeroSemanas && FechaInicio) {
-      const startDate = new Date(FechaInicio)
-      const endDate = new Date(startDate)
-      endDate.setDate(endDate.getDate() + Number.parseInt(NumeroSemanas) * 7)
-      fechaFin = endDate.toISOString().split("T")[0]
-    }
-
-    const checkColumnsQuery = await pool.request().query(`
-      SELECT COLUMN_NAME 
-      FROM INFORMATION_SCHEMA.COLUMNS 
-      WHERE TABLE_NAME = 'Clases' AND COLUMN_NAME IN ('TipoClase', 'NumeroSemanas', 'FechaInicio', 'FechaFin')
-    `)
-
-    const hasNewColumns = checkColumnsQuery.recordset.length > 0
-
     for (const dia of DiasSemana) {
-      if (hasNewColumns) {
-        await pool
-          .request()
-          .input("NombreClase", NombreClase)
-          .input("Descripcion", Descripcion || null)
-          .input("EntrenadorID", EntrenadorID)
-          .input("DiaSemana", dia)
-          .input("HoraInicio", HoraInicio)
-          .input("HoraFin", HoraFin)
-          .input("CupoMaximo", CupoMaximo)
-          .input("TipoClase", TipoClase || "Indefinida")
-          .input("NumeroSemanas", NumeroSemanas ? Number.parseInt(NumeroSemanas) : null)
-          .input("FechaInicio", FechaInicio || null)
-          .input("FechaFin", fechaFin)
-          .query(`
-            INSERT INTO Clases (NombreClase, Descripcion, EntrenadorID, DiaSemana, HoraInicio, HoraFin, CupoMaximo, Activa, TipoClase, NumeroSemanas, FechaInicio, FechaFin)
-            VALUES (@NombreClase, @Descripcion, @EntrenadorID, @DiaSemana, @HoraInicio, @HoraFin, @CupoMaximo, 1, @TipoClase, @NumeroSemanas, @FechaInicio, @FechaFin)
-          `)
-      } else {
-        await pool
-          .request()
-          .input("NombreClase", NombreClase)
-          .input("Descripcion", Descripcion || null)
-          .input("EntrenadorID", EntrenadorID)
-          .input("DiaSemana", dia)
-          .input("HoraInicio", HoraInicio)
-          .input("HoraFin", HoraFin)
-          .input("CupoMaximo", CupoMaximo)
-          .query(`
-            INSERT INTO Clases (NombreClase, Descripcion, EntrenadorID, DiaSemana, HoraInicio, HoraFin, CupoMaximo, Activa)
-            VALUES (@NombreClase, @Descripcion, @EntrenadorID, @DiaSemana, @HoraInicio, @HoraFin, @CupoMaximo, 1)
-          `)
-      }
+      await pool
+        .request()
+        .input("NombreClase", NombreClase)
+        .input("Descripcion", Descripcion || null)
+        .input("EntrenadorID", EntrenadorID)
+        .input("DiaSemana", dia)
+        .input("HoraInicio", HoraInicio)
+        .input("HoraFin", HoraFin)
+        .input("CupoMaximo", CupoMaximo)
+        .input("FechaInicio", FechaInicio)
+        .input("FechaFin", FechaFin)
+        .input("Categoria", Categoria || null)
+        .query(`
+          INSERT INTO Clases (NombreClase, Descripcion, EntrenadorID, DiaSemana, HoraInicio, HoraFin, CupoMaximo, Activa, FechaInicio, FechaFin, Categoria)
+          VALUES (@NombreClase, @Descripcion, @EntrenadorID, @DiaSemana, @HoraInicio, @HoraFin, @CupoMaximo, 1, @FechaInicio, @FechaFin, @Categoria)
+        `)
     }
 
     try {
@@ -170,19 +160,11 @@ export async function POST(request: Request) {
         tipoUsuario: "Entrenador",
         usuarioID: EntrenadorID,
         tipoEvento: "clase_creada",
-        titulo: "Nueva clase grupal asignada",
-        mensaje: `El administrador ha creado la clase "${NombreClase}" que impartirás los días ${DiasSemana.join(", ")} de ${HoraInicio} a ${HoraFin}.`,
-      })
-
-      await crearNotificacion({
-        tipoUsuario: "Admin",
-        usuarioID: undefined,
-        tipoEvento: "clase_creada",
-        titulo: "Clase grupal creada",
-        mensaje: `Se ha creado la clase "${NombreClase}" para ${DiasSemana.join(", ")} de ${HoraInicio} a ${HoraFin}.`,
+        titulo: "Nueva clase asignada",
+        mensaje: `Se te ha asignado la clase "${NombreClase}" los días ${DiasSemana.join(", ")} de ${HoraInicio} a ${HoraFin}.`,
       })
     } catch (notifError) {
-      console.error("[v0] Error al enviar notificaciones (no crítico):", notifError)
+      console.error("Error al enviar notificaciones (no crítico):", notifError)
     }
 
     return NextResponse.json({ message: "Clase(s) creada(s) exitosamente" }, { status: 201 })
@@ -205,84 +187,115 @@ export async function PUT(request: Request) {
       HoraInicio,
       HoraFin,
       CupoMaximo,
-      TipoClase,
-      NumeroSemanas,
       FechaInicio,
+      FechaFin,
+      Categoria,
     } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID de clase requerido" }, { status: 400 })
     }
 
-    const pool = await getConnection()
-
-    let fechaFin = null
-    if (TipoClase === "Temporal" && NumeroSemanas && FechaInicio) {
-      const startDate = new Date(FechaInicio)
-      const endDate = new Date(startDate)
-      endDate.setDate(endDate.getDate() + Number.parseInt(NumeroSemanas) * 7)
-      fechaFin = endDate.toISOString().split("T")[0]
+    if (!DiasSemana || DiasSemana.length === 0) {
+      return NextResponse.json({ error: "Debe seleccionar al menos un día" }, { status: 400 })
     }
 
-    const checkColumnsQuery = await pool.request().query(`
-      SELECT COLUMN_NAME 
-      FROM INFORMATION_SCHEMA.COLUMNS 
-      WHERE TABLE_NAME = 'Clases' AND COLUMN_NAME IN ('TipoClase', 'NumeroSemanas', 'FechaInicio', 'FechaFin')
-    `)
+    if (!FechaInicio || !FechaFin) {
+      return NextResponse.json({ error: "Debe especificar las fechas de inicio y fin" }, { status: 400 })
+    }
 
-    const hasNewColumns = checkColumnsQuery.recordset.length > 0
+    if (new Date(FechaFin) <= new Date(FechaInicio)) {
+      return NextResponse.json({ error: "La fecha de fin debe ser posterior a la fecha de inicio" }, { status: 400 })
+    }
 
-    if (hasNewColumns) {
-      await pool
+    const pool = await getConnection()
+
+    const claseOriginal = await pool
+      .request()
+      .input("ClaseID", id)
+      .query(`
+        SELECT 
+          NombreClase, 
+          CONVERT(VARCHAR(8), HoraInicio, 108) as HoraInicio,
+          CONVERT(VARCHAR(8), HoraFin, 108) as HoraFin,
+          EntrenadorID,
+          FechaInicio,
+          FechaFin
+        FROM Clases
+        WHERE ClaseID = @ClaseID
+      `)
+
+    if (claseOriginal.recordset.length === 0) {
+      return NextResponse.json({ error: "Clase no encontrada" }, { status: 404 })
+    }
+
+    const claseInfo = claseOriginal.recordset[0]
+
+    await pool
+      .request()
+      .input("NombreClase", claseInfo.NombreClase)
+      .input("HoraInicio", claseInfo.HoraInicio)
+      .input("HoraFin", claseInfo.HoraFin)
+      .input("EntrenadorID", claseInfo.EntrenadorID)
+      .input("FechaInicio", claseInfo.FechaInicio)
+      .input("FechaFin", claseInfo.FechaFin)
+      .query(`
+        DELETE FROM Clases
+        WHERE NombreClase = @NombreClase
+          AND CONVERT(VARCHAR(8), HoraInicio, 108) = @HoraInicio
+          AND CONVERT(VARCHAR(8), HoraFin, 108) = @HoraFin
+          AND EntrenadorID = @EntrenadorID
+          AND FechaInicio = @FechaInicio
+          AND FechaFin = @FechaFin
+      `)
+
+    for (const dia of DiasSemana) {
+      const conflictoClase = await pool
         .request()
-        .input("ClaseID", id)
-        .input("NombreClase", NombreClase)
-        .input("Descripcion", Descripcion || null)
-        .input("EntrenadorID", EntrenadorID)
-        .input("DiaSemana", DiasSemana[0])
+        .input("DiaSemana", dia)
         .input("HoraInicio", HoraInicio)
         .input("HoraFin", HoraFin)
-        .input("CupoMaximo", CupoMaximo)
-        .input("TipoClase", TipoClase || "Indefinida")
-        .input("NumeroSemanas", NumeroSemanas ? Number.parseInt(NumeroSemanas) : null)
-        .input("FechaInicio", FechaInicio || null)
-        .input("FechaFin", fechaFin)
+        .input("FechaInicio", FechaInicio)
+        .input("FechaFin", FechaFin)
         .query(`
-          UPDATE Clases
-          SET NombreClase = @NombreClase,
-              Descripcion = @Descripcion,
-              EntrenadorID = @EntrenadorID,
-              DiaSemana = @DiaSemana,
-              HoraInicio = @HoraInicio,
-              HoraFin = @HoraFin,
-              CupoMaximo = @CupoMaximo,
-              TipoClase = @TipoClase,
-              NumeroSemanas = @NumeroSemanas,
-              FechaInicio = @FechaInicio,
-              FechaFin = @FechaFin
-          WHERE ClaseID = @ClaseID
+          SELECT COUNT(*) as Conflictos
+          FROM Clases
+          WHERE DiaSemana = @DiaSemana
+            AND Activa = 1
+            AND (
+              (@HoraInicio >= CONVERT(VARCHAR(8), HoraInicio, 108) AND @HoraInicio < CONVERT(VARCHAR(8), HoraFin, 108)) OR
+              (@HoraFin > CONVERT(VARCHAR(8), HoraInicio, 108) AND @HoraFin <= CONVERT(VARCHAR(8), HoraFin, 108)) OR
+              (@HoraInicio <= CONVERT(VARCHAR(8), HoraInicio, 108) AND @HoraFin >= CONVERT(VARCHAR(8), HoraFin, 108))
+            )
+            AND (
+              (@FechaInicio <= FechaFin AND @FechaFin >= FechaInicio)
+            )
         `)
-    } else {
+
+      if (conflictoClase.recordset[0].Conflictos > 0) {
+        return NextResponse.json(
+          { error: `Ya existe una clase el ${dia} en ese horario para las fechas seleccionadas` },
+          { status: 409 },
+        )
+      }
+    }
+
+    for (const dia of DiasSemana) {
       await pool
         .request()
-        .input("ClaseID", id)
         .input("NombreClase", NombreClase)
         .input("Descripcion", Descripcion || null)
         .input("EntrenadorID", EntrenadorID)
-        .input("DiaSemana", DiasSemana[0])
+        .input("DiaSemana", dia)
         .input("HoraInicio", HoraInicio)
         .input("HoraFin", HoraFin)
         .input("CupoMaximo", CupoMaximo)
+        .input("FechaInicio", FechaInicio)
+        .input("FechaFin", FechaFin)
+        .input("Categoria", Categoria || null)
         .query(`
-          UPDATE Clases
-          SET NombreClase = @NombreClase,
-              Descripcion = @Descripcion,
-              EntrenadorID = @EntrenadorID,
-              DiaSemana = @DiaSemana,
-              HoraInicio = @HoraInicio,
-              HoraFin = @HoraFin,
-              CupoMaximo = @CupoMaximo
-          WHERE ClaseID = @ClaseID
+          INSERT INTO Clases (NombreClase, Descripcion, EntrenadorID, DiaSemana, HoraInicio, HoraFin, CupoMaximo, Activa, FechaInicio, FechaFin, Categoria)
+          VALUES (@NombreClase, @Descripcion, @EntrenadorID, @DiaSemana, @HoraInicio, @HoraFin, @CupoMaximo, 1, @FechaInicio, @FechaFin, @Categoria)
         `)
     }
 
@@ -308,24 +321,12 @@ export async function DELETE(request: Request) {
       .request()
       .input("ClaseID", id)
       .query(`
-        SELECT c.NombreClase, c.DiaSemana, c.HoraInicio, c.HoraFin, c.EntrenadorID,
-               u.Nombre + ' ' + u.Apellido as NombreEntrenador
+        SELECT c.NombreClase, c.DiaSemana, c.HoraInicio, c.HoraFin, c.EntrenadorID
         FROM Clases c
-        INNER JOIN Entrenadores e ON c.EntrenadorID = e.EntrenadorID
-        INNER JOIN Usuarios u ON e.UsuarioID = u.UsuarioID
         WHERE c.ClaseID = @ClaseID
       `)
 
     const clase = claseInfo.recordset[0]
-
-    const sociosInscritos = await pool
-      .request()
-      .input("ClaseID", id)
-      .query(`
-        SELECT DISTINCT SocioID
-        FROM ReservasClases
-        WHERE ClaseID = @ClaseID
-      `)
 
     await pool
       .request()
@@ -348,29 +349,11 @@ export async function DELETE(request: Request) {
         tipoUsuario: "Entrenador",
         usuarioID: clase.EntrenadorID,
         tipoEvento: "clase_eliminada",
-        titulo: "Clase grupal eliminada",
-        mensaje: `El administrador ha eliminado la clase "${clase.NombreClase}" del ${clase.DiaSemana} de ${clase.HoraInicio} a ${clase.HoraFin}.`,
-      })
-
-      for (const socio of sociosInscritos.recordset) {
-        await crearNotificacion({
-          tipoUsuario: "Socio",
-          usuarioID: socio.SocioID,
-          tipoEvento: "clase_eliminada",
-          titulo: "Clase cancelada",
-          mensaje: `Se ha eliminado la clase "${clase.NombreClase}" en la que estabas inscrito.`,
-        })
-      }
-
-      await crearNotificacion({
-        tipoUsuario: "Admin",
-        usuarioID: undefined,
-        tipoEvento: "clase_eliminada",
-        titulo: "Clase grupal eliminada",
-        mensaje: `${clase.NombreEntrenador} ha eliminado la clase "${clase.NombreClase}" del ${clase.DiaSemana}.`,
+        titulo: "Clase eliminada",
+        mensaje: `Se ha eliminado la clase "${clase.NombreClase}" del ${clase.DiaSemana} de ${clase.HoraInicio} a ${clase.HoraFin}.`,
       })
     } catch (notifError) {
-      console.error("[v0] Error al enviar notificaciones (no crítico):", notifError)
+      console.error("Error al enviar notificaciones (no crítico):", notifError)
     }
 
     return NextResponse.json({ message: "Clase eliminada exitosamente" })

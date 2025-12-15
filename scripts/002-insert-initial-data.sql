@@ -13,7 +13,7 @@ INSERT INTO Roles (NombreRol, Descripcion) VALUES
 -- Insertar Usuario Administrador por defecto
 -- Password: Admin123! (debe ser hasheado en la aplicación)
 INSERT INTO Usuarios (RolID, NombreUsuario, Email, PasswordHash, Nombre, Apellido, Telefono) VALUES
-(1, 'admin', 'admin@mundofitness.cl', '$2b$10$placeholder', 'Administrador', 'Sistema', '912345678');
+(1, 'admin', 'admin@mundofitness.cl', '$2b$10$7DmSEKpSoLfmKUqdbUGOAOTVcwDP/FhhkORZGjCzoX0i/Qkv1W5Q2', 'Administrador', 'Sistema', '912345678');
 
 -- Insertar Planes de Membresía iniciales
 INSERT INTO PlanesMembresía (NombrePlan, Descripcion, Precio, DuracionDias, TipoPlan, Beneficios) VALUES

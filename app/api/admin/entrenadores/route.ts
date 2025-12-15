@@ -17,6 +17,7 @@ export async function GET() {
         e.Especialidad,
         e.Certificaciones,
         e.Biografia,
+        e.FotoURL,
         e.Activo,
         u.FechaCreacion
       FROM Entrenadores e
@@ -26,9 +27,9 @@ export async function GET() {
     `)
 
     return NextResponse.json(result.recordset)
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error al obtener entrenadores:", error)
-    return NextResponse.json({ error: "Error al obtener entrenadores" }, { status: 500 })
+    return NextResponse.json({ error: "Error al obtener entrenadores", details: error.message }, { status: 500 })
   }
 }
 
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
 
     const pool = await getConnection()
 
+    // Obtener el RolID para Entrenador
     const rolResult = await pool.request().query(`
       SELECT RolID FROM Roles WHERE NombreRol = 'Entrenador'
     `)
@@ -48,9 +50,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Rol Entrenador no encontrado" }, { status: 400 })
     }
 
+    // Generar contraseña temporal
     const tempPassword = `${nombre.toLowerCase()}123`
     const hashedPassword = await hashPassword(tempPassword)
 
+    // Crear usuario
     const userResult = await pool
       .request()
       .input("rolID", rolID)
@@ -69,6 +73,7 @@ export async function POST(request: Request) {
 
     const usuarioID = userResult.recordset[0].UsuarioID
 
+    // Crear entrenador
     await pool
       .request()
       .input("usuarioID", usuarioID)
@@ -85,19 +90,22 @@ export async function POST(request: Request) {
       message: "Entrenador creado exitosamente",
       tempPassword: tempPassword,
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error al crear entrenador:", error)
-    return NextResponse.json({ error: "Error al crear entrenador" }, { status: 500 })
+    return NextResponse.json({ error: "Error al crear entrenador", details: error.message }, { status: 500 })
   }
 }
 
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { entrenadorID, nombre, apellido, email, telefono, especialidad, certificaciones, estado } = body
+    const { entrenadorID, nombre, apellido, email, telefono, especialidad, certificaciones, estado, fotoURL } = body
+
+    console.log("[v0] PUT entrenador - datos recibidos:", { entrenadorID, fotoURL })
 
     const pool = await getConnection()
 
+    // Actualizar datos de usuario
     await pool
       .request()
       .input("entrenadorID", entrenadorID)
@@ -117,16 +125,22 @@ export async function PUT(request: Request) {
       .input("especialidad", especialidad)
       .input("certificaciones", certificaciones)
       .input("estado", estado)
+      .input("fotoURL", fotoURL || null)
       .query(`
         UPDATE Entrenadores
-        SET Especialidad = @especialidad, Certificaciones = @certificaciones, Estado = @estado
+        SET Especialidad = @especialidad, 
+            Certificaciones = @certificaciones, 
+            Activo = @estado,
+            FotoURL = @fotoURL
         WHERE EntrenadorID = @entrenadorID
       `)
 
+    console.log("[v0] PUT entrenador - FotoURL actualizada exitosamente")
+
     return NextResponse.json({ success: true, message: "Entrenador actualizado exitosamente" })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error al actualizar entrenador:", error)
-    return NextResponse.json({ error: "Error al actualizar entrenador" }, { status: 500 })
+    return NextResponse.json({ error: "Error al actualizar entrenador", details: error.message }, { status: 500 })
   }
 }
 
@@ -151,8 +165,8 @@ export async function DELETE(request: Request) {
       `)
 
     return NextResponse.json({ success: true, message: "Entrenador eliminado exitosamente" })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error al eliminar entrenador:", error)
-    return NextResponse.json({ error: "Error al eliminar entrenador" }, { status: 500 })
+    return NextResponse.json({ error: "Error al eliminar entrenador", details: error.message }, { status: 500 })
   }
 }

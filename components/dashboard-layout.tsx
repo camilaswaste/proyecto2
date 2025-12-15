@@ -2,11 +2,14 @@
 
 import { CalendarCheck, RefreshCw } from "lucide-react"
 import type React from "react"
+import Image from "next/image"
 
 import { NotificationsDropdown } from "@/components/notifications-dropdown"
 import { Button } from "@/components/ui/button"
 import type { User as UserType } from "@/lib/auth-client"
 import { getUser, logout } from "@/lib/auth-client"
+import { toast } from "@/hooks/use-toast"
+
 import {
   BarChart3,
   Calendar,
@@ -22,10 +25,15 @@ import {
   UserCircle,
   Users,
   X,
+  ClipboardCheck,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react"
+
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback} from "react"
+
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -38,18 +46,102 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
   const [user, setUser] = useState<UserType | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
+  // 🔐 Validación de sesión
   useEffect(() => {
     const userData = getUser()
-    if (!userData) {
-      router.push("/login")
-      return
-    }
-    if (userData.rol !== role) {
+    if (!userData || userData.rol !== role) {
       router.push("/login")
       return
     }
     setUser(userData)
   }, [router, role])
+
+  // 🔔 FUNCIÓN ÚNICA para leer notificaciones y mostrar toast
+  const fetchAndToast = useCallback(async () => {
+    if (!user) return
+
+    const tipoUsuario = role === "Administrador" ? "Admin" : role
+    const usuarioID =
+      role === "Administrador" ? undefined : user.entrenadorID || user.socioID
+
+    let lastShownId = Number(
+      localStorage.getItem("last_notification_shown_id") || "0",
+    )
+
+    try {
+      const params = new URLSearchParams({ tipoUsuario })
+      if (usuarioID) params.append("usuarioID", String(usuarioID))
+
+      const res = await fetch(`/api/notificaciones?${params.toString()}`, {
+        cache: "no-store",
+      })
+      const data = await res.json()
+
+      const notificaciones = data?.notificaciones ?? []
+      if (!Array.isArray(notificaciones)) return
+
+      const nuevas = notificaciones
+        .filter(
+          (n: any) =>
+            n &&
+            n.Leida === false &&
+            Number(n.NotificacionID) > lastShownId,
+        )
+        .sort(
+          (a: any, b: any) =>
+            Number(a.NotificacionID) - Number(b.NotificacionID),
+        )
+        .slice(0, 3)
+
+      for (const n of nuevas) {
+        lastShownId = Math.max(lastShownId, Number(n.NotificacionID))
+        localStorage.setItem(
+          "last_notification_shown_id",
+          String(lastShownId),
+        )
+
+        const Icon =
+          n.TipoEvento === "membresia_inactiva"
+            ? AlertCircle
+            : CheckCircle2
+
+        toast({
+          title: (
+            <div className="flex items-center gap-2">
+              <Icon className="h-4 w-4" />
+              <span>{n.Titulo}</span>
+            </div>
+          ),
+          description: n.Mensaje,
+          duration: 5000,
+          className: "rounded-xl shadow-lg border bg-background",
+        })
+      }
+    } catch (e) {
+      console.error("[notificaciones] error:", e)
+    }
+  }, [user, role])
+
+  // ⚡ Evento inmediato (cuando haces dispatch desde agregarReserva)
+  useEffect(() => {
+    const handler = () => {
+      fetchAndToast()
+    }
+
+    window.addEventListener("notificacion:nueva", handler)
+    return () => {
+      window.removeEventListener("notificacion:nueva", handler)
+    }
+  }, [fetchAndToast])
+
+  // ⏱️ Polling cada 5 segundos
+  useEffect(() => {
+    if (!user) return
+
+    fetchAndToast()
+    const interval = setInterval(fetchAndToast, 5000)
+    return () => clearInterval(interval)
+  }, [user, fetchAndToast])
 
   const handleLogout = () => {
     logout()
@@ -76,6 +168,7 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: Calendar, label: "Clases", href: `${basePrefix}/clases` },
         { icon: Clock, label: "Cronograma", href: `${basePrefix}/cronograma` },
         { icon: UserCircle, label: "Recepción", href: `${basePrefix}/recepcion` },
+        { icon: ClipboardCheck, label: "Asistencia", href: `${basePrefix}/asistencia` },
         { icon: RefreshCw, label: "Sincronización", href: `${basePrefix}/sync` },
         { icon: BarChart3, label: "KPIs", href: `${basePrefix}/kpis` },
       ]
@@ -123,11 +216,17 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
       >
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="p-4 border-b">
-            <div className="flex items-center justify-between">
+          <div className="p-2 border-b">
+            <div className="flex items-center justify-center">
               <div className="flex items-center gap-2">
-                <Dumbbell className="h-6 w-6 text-primary" />
-                <span className="font-bold">Mundo Fitness</span>
+                <Image
+                  src="/images/logoMundo.png"
+                  alt="Mundo Fitness Logo"
+                  width={120}
+                  height={35}
+                  className="object-contain"
+                  priority
+                />
               </div>
               <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(false)}>
                 <X className="h-5 w-5" />

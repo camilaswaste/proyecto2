@@ -1,20 +1,28 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
+import Image from "next/image"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dumbbell, AlertCircle, CheckCircle2 } from "lucide-react"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { AlertCircle, CheckCircle2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -52,26 +60,22 @@ export default function LoginPage() {
       localStorage.setItem("user", JSON.stringify(data.user))
 
       if (data.user.requiereCambioPassword) {
-        // Redirect to password change page based on role
         if (data.user.rol === "Administrador") {
           router.push("/admin/configuracion?cambiarPassword=true")
         } else if (data.user.rol === "Entrenador") {
           router.push("/entrenador/configuracion?cambiarPassword=true")
-        } else if (data.user.rol === "Socio") {
+        } else {
           router.push("/socio/configuracion?cambiarPassword=true")
         }
         return
       }
 
-      // Redirigir según el rol
       if (data.user.rol === "Administrador") {
         router.push("/admin/dashboard")
       } else if (data.user.rol === "Entrenador") {
         router.push("/entrenador/dashboard")
-      } else if (data.user.rol === "Socio") {
-        router.push("/socio/dashboard")
       } else {
-        router.push("/dashboard")
+        router.push("/socio/dashboard")
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión")
@@ -81,24 +85,36 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[oklch(0.95_0.05_240)] via-background to-[oklch(0.95_0.05_280)] p-4">
-      <Card className="w-full max-w-md shadow-xl">
-        <CardHeader className="text-center gradient-admin rounded-t-xl p-8">
-          <div className="flex justify-center mb-4">
-            <Dumbbell className="h-16 w-16 text-white" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 via-white to-gray-200 p-4">
+      <Card className="w-full max-w-md rounded-2xl shadow-xl border">
+        {/* HEADER */}
+        <CardHeader className="text-center space-y-4 pt-8">
+          <div className="flex justify-center">
+            <Image
+              src="/images/logoMundo.png"
+              alt="Mundo Fitness"
+              width={160}
+              height={50}
+              priority
+            />
           </div>
-          <CardTitle className="text-3xl font-bold text-white">Mundo Fitness</CardTitle>
-          <CardDescription className="text-white/90 text-base">
-            Ingresa tus credenciales para acceder al sistema
+
+          <CardTitle className="text-2xl font-bold">
+            Iniciar sesión
+          </CardTitle>
+          <CardDescription>
+            Accede al sistema de gestión Mundo Fitness
           </CardDescription>
         </CardHeader>
-        <CardContent>
+
+        {/* CONTENT */}
+        <CardContent className="pt-4">
           <form onSubmit={handleSubmit} className="space-y-4">
             {showSuccess && (
-              <Alert className="bg-green-50 border-green-200">
+              <Alert className="border-green-200 bg-green-50">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                 <AlertDescription className="text-green-800">
-                  ¡Registro exitoso! Ahora puedes iniciar sesión con tus credenciales.
+                  ¡Registro exitoso! Ahora puedes iniciar sesión.
                 </AlertDescription>
               </Alert>
             )}
@@ -117,7 +133,9 @@ export default function LoginPage() {
                 type="email"
                 placeholder="tu@email.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
                 required
               />
             </div>
@@ -129,26 +147,34 @@ export default function LoginPage() {
                 type="password"
                 placeholder="••••••••"
                 value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
+                }
                 required
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
+            >
+              {loading ? "Iniciando sesión..." : "Iniciar sesión"}
             </Button>
 
-            <div className="text-center text-sm text-muted-foreground">
-              <Link href="/recuperar-password" className="hover:text-primary">
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <Link
+                href="/recuperar-password"
+                className="hover:text-primary"
+              >
                 ¿Olvidaste tu contraseña?
               </Link>
-            </div>
 
-            <div className="text-center">
-              <Link href="/">
-                <Button variant="ghost" type="button">
-                  Volver al inicio
-                </Button>
+              <Link
+                href="/"
+                className="hover:text-primary"
+              >
+                Volver al inicio
               </Link>
             </div>
           </form>
