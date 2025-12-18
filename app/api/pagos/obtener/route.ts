@@ -1,3 +1,4 @@
+//api/pagos/obtener/route.ts
 import { getConnection } from "@/lib/db"
 import { NextResponse } from "next/server"
 

@@ -1,3 +1,4 @@
+//api/pagos/pdf/route.ts
 import { NextRequest, NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"

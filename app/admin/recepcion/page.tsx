@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Clock, Trash2, UserCircle } from "lucide-react"
-import { useEffect, useState } from "react"
+import { Clock, Trash2, UserCircle, CalendarDays, Users } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 
 interface Horario {
   HorarioRecepcionID: number
@@ -31,6 +31,19 @@ interface Entrenador {
 
 const diasSemana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
+function timeToMinutes(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+function minutesToDuration(mins: number) {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h <= 0) return `${m} min`
+  if (m === 0) return `${h} h`
+  return `${h} h ${m} min`
+}
+
 export default function RecepcionPage() {
   const [horarios, setHorarios] = useState<Horario[]>([])
   const [entrenadores, setEntrenadores] = useState<Entrenador[]>([])
@@ -46,25 +59,16 @@ export default function RecepcionPage() {
 
   const fetchData = async () => {
     try {
-      console.log("[v0] Fetching recepción data from API...")
       const response = await fetch("/api/admin/recepcion")
-      console.log("[v0] Response status:", response.status)
-      console.log("[v0] Response content-type:", response.headers.get("content-type"))
-
       if (!response.ok) {
         const text = await response.text()
-        console.error("[v0] Error response:", text)
-        throw new Error(`HTTP error! status: ${response.status}`)
+        throw new Error(text || `HTTP ${response.status}`)
       }
-
       const data = await response.json()
-      console.log("[v0] Data received:", data)
-      console.log("[v0] Entrenadores:", data.entrenadores?.length)
-
       setHorarios(data.horarios || [])
       setEntrenadores(data.entrenadores || [])
     } catch (error) {
-      console.error("[v0] Error fetching data:", error)
+      console.error("[recepcion] fetch error:", error)
       toast({
         title: "Error",
         description: "No se pudieron cargar los datos",
@@ -101,7 +105,8 @@ export default function RecepcionPage() {
           diaSemana: selectedDia,
           horaInicio,
           horaFin,
-        }),
+        })
+        ,
       })
 
       const data = await response.json()
@@ -120,13 +125,10 @@ export default function RecepcionPage() {
         description: "Horario de recepción asignado correctamente",
       })
 
-      // Limpiar formulario
       setSelectedEntrenador(null)
       setSelectedDia("")
       setHoraInicio("")
       setHoraFin("")
-
-      // Recargar datos
       fetchData()
     } catch (error) {
       console.error("Error asignando horario:", error)
@@ -173,26 +175,51 @@ export default function RecepcionPage() {
     }
   }
 
-  // Agrupar horarios por día
-  const horariosPorDia: { [key: string]: Horario[] } = {}
-  diasSemana.forEach((dia) => {
-    horariosPorDia[dia] = horarios.filter((h) => h.DiaSemana === dia)
-  })
+  // ✅ Agrupar + ordenar turnos por día (por HoraInicio)
+  const horariosPorDia = useMemo(() => {
+    const map: Record<string, Horario[]> = {}
+    for (const dia of diasSemana) map[dia] = []
+    for (const h of horarios) {
+      if (!map[h.DiaSemana]) map[h.DiaSemana] = []
+      map[h.DiaSemana].push(h)
+    }
+    for (const dia of Object.keys(map)) {
+      map[dia].sort((a, b) => timeToMinutes(a.HoraInicio) - timeToMinutes(b.HoraInicio))
+    }
+    return map
+  }, [horarios])
+
+  const totalTurnos = horarios.length
 
   return (
     <DashboardLayout role="Administrador">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Gestión de Recepción</h1>
-          <p className="text-muted-foreground">Asigna horarios de recepción a los entrenadores</p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl font-bold">Gestión de Recepción</h1>
+            <p className="text-muted-foreground">
+              Asigna turnos de recepción por día y tramo horario (Horario atención: 06:00–13:00, 13:00–23:00).
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <div className="inline-flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{diasSemana.length} días</span>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{totalTurnos} turnos</span>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Formulario de asignación */}
+          {/* Formulario */}
           <Card className="lg:col-span-1">
             <CardHeader>
-              <CardTitle>Asignar Horario</CardTitle>
-              <CardDescription>Selecciona un entrenador y define el horario</CardDescription>
+              <CardTitle>Asignar turno</CardTitle>
+              <CardDescription>Selecciona un entrenador, día y tramo horario</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -207,7 +234,7 @@ export default function RecepcionPage() {
                   <SelectContent>
                     {entrenadores.map((e) => (
                       <SelectItem key={e.EntrenadorID} value={e.EntrenadorID.toString()}>
-                        {e.Nombre} {e.Apellido} - {e.Especialidad}
+                        {e.Nombre} {e.Apellido} — {e.Especialidad}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -215,7 +242,7 @@ export default function RecepcionPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Día de la semana</Label>
+                <Label>Día</Label>
                 <Select value={selectedDia} onValueChange={setSelectedDia}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar día" />
@@ -232,71 +259,95 @@ export default function RecepcionPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Hora inicio</Label>
+                  <Label>Desde</Label>
                   <Input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Hora fin</Label>
+                  <Label>Hasta</Label>
                   <Input type="time" value={horaFin} onChange={(e) => setHoraFin(e.target.value)} />
                 </div>
               </div>
 
               <Button onClick={handleAsignar} className="w-full">
-                Asignar Horario
+                Asignar turno
               </Button>
+
             </CardContent>
           </Card>
 
-          {/* Cronograma semanal */}
+          {/* Cronograma: Timeline por día */}
+          {/* Cronograma semanal - TIMELINE */}
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Horarios de Recepción Semanales</CardTitle>
-              <CardDescription>Vista general de todos los horarios asignados</CardDescription>
+              <CardDescription>Vista por día en formato agenda (bloques por tramo horario)</CardDescription>
             </CardHeader>
+
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {diasSemana.map((dia) => (
-                  <div key={dia} className="space-y-2">
-                    <h3 className="font-semibold text-sm text-primary">{dia}</h3>
-                    <div className="space-y-2">
-                      {horariosPorDia[dia].length === 0 ? (
-                        <p className="text-sm text-muted-foreground italic">Sin horarios asignados</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {diasSemana.map((dia) => {
+                  const items = [...(horariosPorDia[dia] || [])].sort((a, b) => a.HoraInicio.localeCompare(b.HoraInicio))
+
+                  return (
+                    <div key={dia} className="rounded-xl border bg-background p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-sm text-primary">{dia}</h3>
+                        <span className="text-xs text-muted-foreground">{items.length} turno(s)</span>
+                      </div>
+
+                      {items.length === 0 ? (
+                        <div className="text-sm text-muted-foreground italic py-6 text-center">
+                          Sin turnos asignados
+                        </div>
                       ) : (
-                        horariosPorDia[dia].map((horario) => (
-                          <Card key={horario.HorarioRecepcionID} className="bg-red-50 border-red-200">
-                            <CardContent className="p-3 space-y-2">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  <UserCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-medium text-red-900 truncate">
-                                      {horario.Nombre} {horario.Apellido}
-                                    </p>
-                                    <p className="text-xs text-red-700">{horario.Especialidad}</p>
+                        <div className="relative pl-6 space-y-3">
+                          {/* línea vertical */}
+                          <div className="absolute left-[11px] top-1 bottom-1 w-px bg-muted" />
+
+                          {items.map((horario) => (
+                            <div key={horario.HorarioRecepcionID} className="relative">
+                              {/* punto */}
+                              <div className="absolute left-[6px] top-4 h-3 w-3 rounded-full bg-primary ring-4 ring-primary/15" />
+
+                              <div className="rounded-xl border bg-muted/20 p-3 hover:bg-muted/30 transition">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <Clock className="h-4 w-4 text-primary" />
+                                      <p className="font-semibold text-sm">
+                                        {horario.HoraInicio} – {horario.HoraFin}
+                                      </p>
+                                    </div>
+
+                                    <div className="mt-2 flex items-start gap-2 min-w-0">
+                                      <UserCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-medium truncate">
+                                          {horario.Nombre} {horario.Apellido}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">{horario.Especialidad}</p>
+                                      </div>
+                                    </div>
                                   </div>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEliminar(horario.HorarioRecepcionID)}
+                                    className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 flex-shrink-0"
+                                    title="Eliminar turno"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleEliminar(horario.HorarioRecepcionID)}
-                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-900 hover:bg-red-100 flex-shrink-0"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
                               </div>
-                              <div className="flex items-center gap-1 text-xs text-red-700">
-                                <Clock className="h-3 w-3" />
-                                <span>
-                                  {horario.HoraInicio} - {horario.HoraFin}
-                                </span>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>
