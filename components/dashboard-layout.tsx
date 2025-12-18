@@ -1,18 +1,22 @@
 "use client"
 
 import { CalendarCheck, RefreshCw } from "lucide-react"
-import type React from "react"
 import Image from "next/image"
+import type React from "react"
 
 import { NotificationsDropdown } from "@/components/notifications-dropdown"
 import { Button } from "@/components/ui/button"
+import { toast } from "@/hooks/use-toast"
 import type { User as UserType } from "@/lib/auth-client"
 import { getUser, logout } from "@/lib/auth-client"
-import { toast } from "@/hooks/use-toast"
+import { FileText } from "lucide-react"
 
 import {
+  AlertCircle,
   BarChart3,
   Calendar,
+  CheckCircle2,
+  ClipboardCheck,
   Clock,
   CreditCard,
   Dumbbell,
@@ -25,14 +29,11 @@ import {
   UserCircle,
   Users,
   X,
-  ClipboardCheck,
-  CheckCircle2,
-  AlertCircle,
 } from "lucide-react"
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useEffect, useState, useCallback} from "react"
+import { useCallback, useEffect, useState } from "react"
 
 
 interface DashboardLayoutProps {
@@ -169,8 +170,8 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: Clock, label: "Cronograma", href: `${basePrefix}/cronograma` },
         { icon: UserCircle, label: "Recepción", href: `${basePrefix}/recepcion` },
         { icon: ClipboardCheck, label: "Asistencia", href: `${basePrefix}/asistencia` },
-        { icon: RefreshCw, label: "Sincronización", href: `${basePrefix}/sync` },
         { icon: BarChart3, label: "KPIs", href: `${basePrefix}/kpis` },
+        { icon: FileText, label: "Reportes", href: `${basePrefix}/reportes` },
       ]
     } else if (role === "Entrenador") {
       return [
