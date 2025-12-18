@@ -196,7 +196,6 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: Package, label: "Inventario", href: `${basePrefix}/inventario` },
         { icon: ShoppingCart, label: "Punto de Venta", href: `${basePrefix}/ventas` },
         { icon: Calendar, label: "Clases", href: `${basePrefix}/clases` },
-        { icon: Clock, label: "Cronograma", href: `${basePrefix}/cronograma` },
         { icon: UserCircle, label: "Recepción", href: `${basePrefix}/recepcion` },
         { icon: ClipboardCheck, label: "Asistencia", href: `${basePrefix}/asistencia` },
         { icon: RefreshCw, label: "Sincronización", href: `${basePrefix}/sync` },
@@ -208,7 +207,6 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: Users, label: "Socios", href: `${basePrefix}/socios` },
         { icon: Calendar, label: "Mis Clases", href: `${basePrefix}/clases` },
         { icon: Clock, label: "Horario", href: `${basePrefix}/horario` },
-        { icon: CalendarCheck, label: "Mis Sesiones", href: `${basePrefix}/sesiones` },
         { icon: RefreshCw, label: "Gestión Horario", href: `${basePrefix}/gestion-horario` },
       ]
     } else {
