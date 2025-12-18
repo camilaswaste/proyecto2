@@ -1,5 +1,6 @@
 import { getConnection } from "@/lib/db"
 import { type NextRequest, NextResponse } from "next/server"
+import sql from "mssql"
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,70 +8,56 @@ export async function GET(request: NextRequest) {
     const tipoUsuario = searchParams.get("tipoUsuario")
     const usuarioID = searchParams.get("usuarioID")
 
-    console.log("[v0] GET notificaciones:", { tipoUsuario, usuarioID })
-
     if (!tipoUsuario) {
       return NextResponse.json({ error: "TipoUsuario es requerido" }, { status: 400 })
     }
 
     const pool = await getConnection()
-    let notificaciones
+    
+    // 1. Usamos TOP 20 para no saturar la conexión si hay muchas notificaciones
+    let query = `
+      SELECT TOP 20
+        NotificacionID,
+        TipoEvento,
+        Titulo,
+        Mensaje,
+        Leida,
+        FechaCreacion
+      FROM Notificaciones
+      WHERE TipoUsuario = @tipoUsuario
+    `
+
+    const requestSql = pool.request().input("tipoUsuario", sql.NVarChar, tipoUsuario)
 
     if (tipoUsuario === "Admin") {
-      // Admin no tiene usuarioID específico
-      const result = await pool
-        .request()
-        .input("tipoUsuario", tipoUsuario)
-        .query(`
-          SELECT 
-            NotificacionID,
-            TipoEvento,
-            Titulo,
-            Mensaje,
-            Leida,
-            FechaCreacion
-          FROM Notificaciones
-          WHERE TipoUsuario = @tipoUsuario AND UsuarioID IS NULL
-          ORDER BY FechaCreacion DESC
-        `)
-      notificaciones = result.recordset
+      query += " AND UsuarioID IS NULL"
     } else {
-      // Entrenador y Socio tienen usuarioID específico
-      if (!usuarioID) {
-        return NextResponse.json({ error: "UsuarioID es requerido para Entrenador/Socio" }, { status: 400 })
+      if (!usuarioID || usuarioID === "null") {
+        return NextResponse.json({ notificaciones: [] }) // Retorno seguro si no hay ID
       }
-
-      const result = await pool
-        .request()
-        .input("tipoUsuario", tipoUsuario)
-        .input("usuarioID", Number.parseInt(usuarioID))
-        .query(`
-          SELECT 
-            NotificacionID,
-            TipoEvento,
-            Titulo,
-            Mensaje,
-            Leida,
-            FechaCreacion
-          FROM Notificaciones
-          WHERE TipoUsuario = @tipoUsuario AND UsuarioID = @usuarioID
-          ORDER BY FechaCreacion DESC
-        `)
-      notificaciones = result.recordset
+      query += " AND UsuarioID = @usuarioID"
+      requestSql.input("usuarioID", sql.Int, Number.parseInt(usuarioID))
     }
 
-    // Convertir FechaCreacion a string ISO
+    query += " ORDER BY FechaCreacion DESC"
+
+    const result = await requestSql.query(query)
+    const notificaciones = result.recordset || []
+
+    // 2. Formateo seguro: verificamos que FechaCreacion exista antes de usar toISOString()
     const notificacionesFormateadas = notificaciones.map((n: any) => ({
       ...n,
-      FechaCreacion: n.FechaCreacion.toISOString(),
+      FechaCreacion: n.FechaCreacion instanceof Date 
+        ? n.FechaCreacion.toISOString() 
+        : new Date().toISOString(),
     }))
 
-    console.log("[v0] Notificaciones encontradas:", notificacionesFormateadas.length)
-
     return NextResponse.json({ notificaciones: notificacionesFormateadas })
-  } catch (error) {
-    console.error("[v0] Error al obtener notificaciones:", error)
-    return NextResponse.json({ error: "Error al obtener notificaciones" }, { status: 500 })
+
+  } catch (error: any) {
+    console.error("[v0] Error crítico en notificaciones:", error)
+    // 3. IMPORTANTE: Retornamos un objeto válido aunque falle para no bloquear el Frontend
+    return NextResponse.json({ notificaciones: [], error: error.message }, { status: 500 })
   }
 }
 

@@ -1,4 +1,5 @@
 import { getConnection } from "@/lib/db"
+import sql from "mssql"
 
 export type TipoEvento =
   | "clase_creada"
@@ -25,57 +26,60 @@ interface NotificacionParams {
 }
 
 export async function crearNotificacion(params: NotificacionParams) {
-  const pool = await getConnection()
-
   try {
-    // Crear la notificación
+    const pool = await getConnection()
+
+    // 1. Insertar la notificación con tipos de datos explícitos para evitar errores de conversión
     await pool
       .request()
-      .input("tipoUsuario", params.tipoUsuario)
-      .input("usuarioID", params.usuarioID || null)
-      .input("tipoEvento", params.tipoEvento)
-      .input("titulo", params.titulo)
-      .input("mensaje", params.mensaje)
+      .input("tipoUsuario", sql.NVarChar, params.tipoUsuario)
+      .input("usuarioID", sql.Int, params.usuarioID || null)
+      .input("tipoEvento", sql.NVarChar, params.tipoEvento)
+      .input("titulo", sql.NVarChar, params.titulo)
+      .input("mensaje", sql.NVarChar, params.mensaje)
       .query(`
-        INSERT INTO Notificaciones (TipoUsuario, UsuarioID, TipoEvento, Titulo, Mensaje)
-        VALUES (@tipoUsuario, @usuarioID, @tipoEvento, @titulo, @mensaje)
+        INSERT INTO Notificaciones (TipoUsuario, UsuarioID, TipoEvento, Titulo, Mensaje, Leida, FechaCreacion)
+        VALUES (@tipoUsuario, @usuarioID, @tipoEvento, @titulo, @mensaje, 0, GETDATE())
       `)
 
-    // Limpiar notificaciones antiguas (mantener solo las últimas 50 por usuario)
-    if (params.usuarioID) {
-      await pool
-        .request()
-        .input("tipoUsuario", params.tipoUsuario)
-        .input("usuarioID", params.usuarioID)
-        .query(`
-          DELETE FROM Notificaciones
-          WHERE NotificacionID IN (
-            SELECT NotificacionID
-            FROM Notificaciones
-            WHERE TipoUsuario = @tipoUsuario AND UsuarioID = @usuarioID
-            ORDER BY FechaCreacion DESC
-            OFFSET 50 ROWS
-          )
-        `)
-    } else {
-      // Para Admin (sin usuarioID específico)
-      await pool
-        .request()
-        .input("tipoUsuario", params.tipoUsuario)
-        .query(`
-          DELETE FROM Notificaciones
-          WHERE NotificacionID IN (
-            SELECT NotificacionID
-            FROM Notificaciones
-            WHERE TipoUsuario = @tipoUsuario AND UsuarioID IS NULL
-            ORDER BY FechaCreacion DESC
-            OFFSET 50 ROWS
-          )
-        `)
-    }
-
     console.log("[v0] Notificación creada:", params.titulo)
+
+    // 2. Limpieza optimizada: Se ejecuta sin 'await' para no bloquear la respuesta al usuario
+    // Solo mantenemos las últimas 50 para evitar que la tabla crezca infinitamente
+    limpiarNotificacionesAntiguas(params.tipoUsuario, params.usuarioID)
+
   } catch (error) {
     console.error("[v0] Error al crear notificación:", error)
+  }
+}
+
+/**
+ * Función auxiliar para limpiar registros antiguos sin bloquear el hilo principal
+ */
+async function limpiarNotificacionesAntiguas(tipoUsuario: string, usuarioID?: number) {
+  try {
+    const pool = await getConnection()
+    const request = pool.request().input("tipoUsuario", sql.NVarChar, tipoUsuario)
+    
+    let whereClause = "WHERE TipoUsuario = @tipoUsuario AND UsuarioID IS NULL"
+    if (usuarioID) {
+      request.input("usuarioID", sql.Int, usuarioID)
+      whereClause = "WHERE TipoUsuario = @tipoUsuario AND UsuarioID = @usuarioID"
+    }
+
+    // Usamos una lógica de DELETE basada en exclusión del TOP 50
+    await request.query(`
+      DELETE FROM Notificaciones
+      WHERE NotificacionID NOT IN (
+        SELECT TOP 50 NotificacionID
+        FROM Notificaciones
+        ${whereClause}
+        ORDER BY FechaCreacion DESC
+      )
+      AND TipoUsuario = @tipoUsuario
+      ${usuarioID ? "AND UsuarioID = @usuarioID" : "AND UsuarioID IS NULL"}
+    `)
+  } catch (error) {
+    console.error("[v0] Error en limpieza de notificaciones:", error)
   }
 }

@@ -1,22 +1,19 @@
 "use client"
 
 import { CalendarCheck, RefreshCw } from "lucide-react"
-import Image from "next/image"
 import type React from "react"
+import Image from "next/image"
 
 import { NotificationsDropdown } from "@/components/notifications-dropdown"
 import { Button } from "@/components/ui/button"
-import { toast } from "@/hooks/use-toast"
 import type { User as UserType } from "@/lib/auth-client"
 import { getUser, logout } from "@/lib/auth-client"
-import { FileText } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
+import { ShoppingCart } from "lucide-react"
 
 import {
-  AlertCircle,
   BarChart3,
   Calendar,
-  CheckCircle2,
-  ClipboardCheck,
   Clock,
   CreditCard,
   Dumbbell,
@@ -29,11 +26,16 @@ import {
   UserCircle,
   Users,
   X,
+  ClipboardCheck,
+  CheckCircle2,
+  AlertCircle,
+  Sun,
+  Moon
 } from "lucide-react"
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 
 
 interface DashboardLayoutProps {
@@ -46,8 +48,9 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
   const pathname = usePathname()
   const [user, setUser] = useState<UserType | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [isDark, setIsDark] = useState(false)
 
-  // 🔐 Validación de sesión
+  // Validación de sesión
   useEffect(() => {
     const userData = getUser()
     if (!userData || userData.rol !== role) {
@@ -57,7 +60,7 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
     setUser(userData)
   }, [router, role])
 
-  // 🔔 FUNCIÓN ÚNICA para leer notificaciones y mostrar toast
+  // FUNCIÓN ÚNICA para leer notificaciones y mostrar toast
   const fetchAndToast = useCallback(async () => {
     if (!user) return
 
@@ -123,7 +126,7 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
     }
   }, [user, role])
 
-  // ⚡ Evento inmediato (cuando haces dispatch desde agregarReserva)
+  // Evento inmediato (cuando haces dispatch desde agregarReserva)
   useEffect(() => {
     const handler = () => {
       fetchAndToast()
@@ -135,7 +138,7 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
     }
   }, [fetchAndToast])
 
-  // ⏱️ Polling cada 5 segundos
+  // Polling cada 5 segundos
   useEffect(() => {
     if (!user) return
 
@@ -148,6 +151,31 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
     logout()
   }
 
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme")
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+    const shouldBeDark = savedTheme === "dark" || (!savedTheme && prefersDark)
+
+    setIsDark(shouldBeDark)
+    if (shouldBeDark) {
+      document.documentElement.classList.add("dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+    }
+  }, [])
+
+  const toggleTheme = () => {
+    const newTheme = !isDark
+    setIsDark(newTheme)
+
+    if (newTheme) {
+      document.documentElement.classList.add("dark")
+      localStorage.setItem("theme", "dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+      localStorage.setItem("theme", "light")
+    }
+  }
   const getRolePrefix = () => {
     if (role === "Administrador") return "/admin"
     if (role === "Entrenador") return "/entrenador"
@@ -166,12 +194,13 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
         { icon: CreditCard, label: "Pagos", href: `${basePrefix}/pagos` },
         { icon: UserCircle, label: "Entrenadores", href: `${basePrefix}/entrenadores` },
         { icon: Package, label: "Inventario", href: `${basePrefix}/inventario` },
+        { icon: ShoppingCart, label: "Punto de Venta", href: `${basePrefix}/ventas` },
         { icon: Calendar, label: "Clases", href: `${basePrefix}/clases` },
         { icon: Clock, label: "Cronograma", href: `${basePrefix}/cronograma` },
         { icon: UserCircle, label: "Recepción", href: `${basePrefix}/recepcion` },
         { icon: ClipboardCheck, label: "Asistencia", href: `${basePrefix}/asistencia` },
+        { icon: RefreshCw, label: "Sincronización", href: `${basePrefix}/sync` },
         { icon: BarChart3, label: "KPIs", href: `${basePrefix}/kpis` },
-        { icon: FileText, label: "Reportes", href: `${basePrefix}/reportes` },
       ]
     } else if (role === "Entrenador") {
       return [
@@ -211,9 +240,8 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
     <div className="min-h-screen bg-muted/30">
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen transition-transform ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } bg-background border-r w-64`}
+        className={`fixed top-0 left-0 z-40 h-screen transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          } bg-background border-r w-64`}
       >
         <div className="flex flex-col h-full">
           {/* Header */}
@@ -286,6 +314,14 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
               <Menu className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              >
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
               <NotificationsDropdown
                 tipoUsuario={role === "Administrador" ? "Admin" : role}
                 usuarioID={role === "Administrador" ? undefined : user.entrenadorID || user.socioID}

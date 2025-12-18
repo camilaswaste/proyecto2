@@ -65,55 +65,42 @@
 .dark {
   /* Modo oscuro con negro, gris oscuro y rojo */
 
-  --background: oklch(0.15 0 0); /* Negro suave */
-  --foreground: oklch(0.95 0 0); /* Blanco suave */
+  /* AUMENTAMOS LUMINOSIDAD DE 0.15 a 0.20/0.22 */
+  --background: oklch(0.20 0 0); /* Antes 0.15: Negro suave -> Gris oscuro suave */
+  --foreground: oklch(0.95 0 0); 
 
-  --card: oklch(0.18 0 0); /* Negro con tono gris */
+  --card: oklch(0.22 0 0); /* Antes 0.18: Negro con tono gris -> Gris ligeramente más claro */
   --card-foreground: oklch(0.95 0 0);
 
-  --popover: oklch(0.18 0 0);
+  --popover: oklch(0.22 0 0); /* Antes 0.18 */
   --popover-foreground: oklch(0.95 0 0);
 
-  /* Primary - Rojo brillante */
-  --primary: oklch(0.6 0.25 27); /* Rojo más brillante para modo oscuro */
+  /* Primary, Destructive, y Chart se mantienen enfocados en el color Rojo */
+  --primary: oklch(0.6 0.25 27);
   --primary-foreground: oklch(1 0 0);
 
-  /* Secondary - Gris oscuro */
-  --secondary: oklch(0.25 0 0);
+  /* Secondary y Muted deben ser más claros que el fondo para visibilidad */
+  --secondary: oklch(0.35 0 0); /* Antes 0.25: Gris oscuro -> Gris medio/oscuro */
   --secondary-foreground: oklch(0.95 0 0);
 
-  /* Muted - Gris oscuro */
-  --muted: oklch(0.25 0 0);
+  --muted: oklch(0.35 0 0); /* Antes 0.25 */
   --muted-foreground: oklch(0.7 0 0);
 
-  /* Accent - Rojo oscuro */
-  --accent: oklch(0.3 0.1 25);
-  --accent-foreground: oklch(0.95 0 0);
+  --accent: oklch(0.38 0.1 25); /* Antes 0.30 */
 
-  /* Destructive */
-  --destructive: oklch(0.6 0.25 27);
-  --destructive-foreground: oklch(1 0 0);
-
-  /* Borders and inputs - Gris oscuro */
-  --border: oklch(0.25 0 0);
-  --input: oklch(0.22 0 0);
+  /* Borders and inputs deben estar entre el background y el secondary/card */
+  --border: oklch(0.30 0 0); /* Antes 0.25: Hace los bordes más visibles */
+  --input: oklch(0.28 0 0); /* Antes 0.22 */
   --ring: oklch(0.6 0.25 27);
 
-  /* Chart colors */
-  --chart-1: oklch(0.6 0.25 27);
-  --chart-2: oklch(0.7 0.2 25);
-  --chart-3: oklch(0.5 0 0);
-  --chart-4: oklch(0.75 0.15 27);
-  --chart-5: oklch(0.65 0 0);
-
-  /* Sidebar - Negro */
-  --sidebar: oklch(0.12 0 0); /* Negro más oscuro */
+  /* Sidebar - Aumentamos para que no sea el negro más oscuro */
+  --sidebar: oklch(0.20 0 0); /* Antes 0.12: Negro más oscuro -> Misma luminosidad que el background */
   --sidebar-foreground: oklch(0.95 0 0);
   --sidebar-primary: oklch(0.6 0.25 27);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.22 0 0);
+  --sidebar-accent: oklch(0.30 0 0); /* Antes 0.22 */
   --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(0.25 0 0);
+  --sidebar-border: oklch(0.30 0 0);
   --sidebar-ring: oklch(0.6 0.25 27);
 }
 

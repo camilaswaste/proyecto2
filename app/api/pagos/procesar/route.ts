@@ -1,3 +1,4 @@
+//api/pagos/procesar/route.ts
 import { getConnection } from "@/lib/db";
 import { NextResponse } from "next/server";
 import sql from "mssql";

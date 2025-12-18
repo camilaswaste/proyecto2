@@ -4,9 +4,9 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { QrCodeQuickChart } from "@/components/QrCodeQuickChart"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { getUser } from "@/lib/auth-client"
-import { Calendar, CreditCard, Award as IdCard, TrendingUp, X } from "lucide-react"
+import { Calendar, CreditCard, QrCode, TrendingUp } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 
@@ -17,14 +17,11 @@ interface MembresiaData {
   diasRestantes: number
   estado: string
   codigoQR?: string
-  nombre?: string
-  apellido?: string
-  rut?: string
 }
 
 export default function SocioDashboardPage() {
   const [membershipData, setMembershipData] = useState<MembresiaData | null>(null)
-  const [showCredencial, setShowCredencial] = useState(false)
+  const [showQR, setShowQR] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -36,34 +33,24 @@ export default function SocioDashboardPage() {
           return
         }
 
-        console.log("[v0] Fetching membership data for socioID:", user.socioID)
         const response = await fetch(`/api/socio/membresia?socioID=${user.socioID}`)
         if (!response.ok) throw new Error("Error al obtener datos de membresía")
 
         const data = await response.json()
-        console.log("[v0] Membership data received:", data)
-        console.log("[v0] CodigoQR value:", data.CodigoQR)
 
         if (data) {
           const fechaVencimiento = new Date(data.FechaFin)
           const hoy = new Date()
           const diasRestantes = Math.ceil((fechaVencimiento.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
 
-          const mappedData = {
+          setMembershipData({
             plan: data.NombrePlan,
             fechaInicio: new Date(data.FechaInicio).toLocaleDateString("es-CL"),
             fechaVencimiento: fechaVencimiento.toLocaleDateString("es-CL"),
             diasRestantes: diasRestantes > 0 ? diasRestantes : 0,
             estado: data.Estado,
             codigoQR: data.CodigoQR,
-            nombre: data.Nombre,
-            apellido: data.Apellido,
-            rut: data.RUT,
-          }
-
-          console.log("[v0] Mapped membership data:", mappedData)
-          console.log("[v0] codigoQR after mapping:", mappedData.codigoQR)
-          setMembershipData(mappedData)
+          })
         }
       } catch (error) {
         console.error("[v0] Error fetching membership data:", error)
@@ -207,11 +194,11 @@ export default function SocioDashboardPage() {
               <Button
                 variant="outline"
                 className="w-full justify-start bg-transparent"
-                onClick={() => setShowCredencial(true)}
-                title="Ver mi credencial de socio"
+                onClick={() => setShowQR(true)}
+                disabled={!membershipData?.codigoQR}
               >
-                <IdCard className="h-4 w-4 mr-2" />
-                Ver Mi Credencial
+                <QrCode className="h-4 w-4 mr-2" />
+                Ver Mi Código QR
               </Button>
             </CardContent>
           </Card>
@@ -247,71 +234,21 @@ export default function SocioDashboardPage() {
         </div>
       </div>
 
-      <Dialog open={showCredencial} onOpenChange={setShowCredencial}>
-        <DialogContent className="sm:max-w-md p-0 overflow-hidden bg-transparent border-none">
-          <div className="relative bg-gradient-to-br from-zinc-900 via-zinc-800 to-black rounded-xl shadow-2xl overflow-hidden">
-            {/* Header con gradiente rojo */}
-            <div className="h-24 bg-gradient-to-r from-red-600 to-red-800 relative">
-              <div className="absolute inset-0 bg-black/20" />
-              <div className="relative h-full flex items-center px-6">
-                <h2 className="text-white text-2xl font-bold tracking-tight">CREDENCIAL DE SOCIO</h2>
-              </div>
-              {/* Botón cerrar */}
-              <button
-                onClick={() => setShowCredencial(false)}
-                className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Contenido de la credencial */}
-            <div className="p-6 space-y-6">
-              {/* Información del socio */}
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1">Nombre Completo</p>
-                  <p className="text-white text-xl font-semibold">
-                    {membershipData?.nombre && membershipData?.apellido
-                      ? `${membershipData.nombre} ${membershipData.apellido}`
-                      : "Sin información"}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1">RUT</p>
-                    <p className="text-white text-lg font-medium">{membershipData?.rut || "Sin información"}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1">Estado</p>
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-500/20 text-green-400 border border-green-500/30">
-                      Miembro Activo
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Código QR */}
-              <div className="flex flex-col items-center justify-center bg-white rounded-lg p-4">
-                {membershipData?.codigoQR ? (
-                  <QrCodeQuickChart value={membershipData.codigoQR} size={200} />
-                ) : (
-                  <p className="text-zinc-500 text-sm">No tienes un código QR asignado</p>
-                )}
-              </div>
-
-              {/* Botón cerrar */}
-              <Button
-                onClick={() => setShowCredencial(false)}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold"
-              >
-                Cerrar
-              </Button>
-            </div>
-
-            {/* Decoración inferior */}
-            <div className="h-2 bg-gradient-to-r from-red-600 via-zinc-700 to-black" />
+      <Dialog open={showQR} onOpenChange={setShowQR}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tu Código QR de Acceso</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-6 space-y-4">
+            {membershipData?.codigoQR ? (
+              <>
+                <QrCodeQuickChart value={membershipData.codigoQR} size={250} />
+                <p className="text-sm text-muted-foreground text-center">Muestra este código al ingresar al gimnasio</p>
+                <p className="text-xs text-muted-foreground">Código: {membershipData.codigoQR}</p>
+              </>
+            ) : (
+              <p className="text-muted-foreground">No tienes un código QR asignado aún</p>
+            )}
           </div>
         </DialogContent>
       </Dialog>

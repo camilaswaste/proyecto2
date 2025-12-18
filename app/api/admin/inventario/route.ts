@@ -1,6 +1,60 @@
 import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
 
+async function crearNotificacionStockBajo(pool: any, producto: any) {
+  try {
+    if (producto.StockActual <= producto.StockMinimo) {
+      await pool
+        .request()
+        .input("tipoEvento", "StockCritico")
+        .input("titulo", "Stock Crítico")
+        .input(
+          "mensaje",
+          `El producto "${producto.NombreProducto}" tiene stock crítico (${producto.StockActual} unidades, mínimo: ${producto.StockMinimo})`,
+        )
+        .input("tipoUsuario", "Admin")
+        .query(`
+          IF NOT EXISTS (
+            SELECT 1 FROM Notificaciones 
+            WHERE TipoEvento = @tipoEvento 
+            AND Mensaje LIKE '%${producto.NombreProducto}%'
+            AND Leida = 0
+            AND DATEDIFF(hour, FechaCreacion, GETDATE()) < 24
+          )
+          BEGIN
+            INSERT INTO Notificaciones (TipoEvento, Titulo, Mensaje, TipoUsuario, UsuarioID, Leida, FechaCreacion)
+            VALUES (@tipoEvento, @titulo, @mensaje, @tipoUsuario, NULL, 0, GETDATE())
+          END
+        `)
+    } else if (producto.StockActual <= producto.StockMinimo * 1.5) {
+      await pool
+        .request()
+        .input("tipoEvento", "StockBajo")
+        .input("titulo", "Stock Bajo")
+        .input(
+          "mensaje",
+          `El producto "${producto.NombreProducto}" tiene stock bajo (${producto.StockActual} unidades, mínimo: ${producto.StockMinimo})`,
+        )
+        .input("tipoUsuario", "Admin")
+        .query(`
+          IF NOT EXISTS (
+            SELECT 1 FROM Notificaciones 
+            WHERE TipoEvento = @tipoEvento 
+            AND Mensaje LIKE '%${producto.NombreProducto}%'
+            AND Leida = 0
+            AND DATEDIFF(hour, FechaCreacion, GETDATE()) < 24
+          )
+          BEGIN
+            INSERT INTO Notificaciones (TipoEvento, Titulo, Mensaje, TipoUsuario, UsuarioID, Leida, FechaCreacion)
+            VALUES (@tipoEvento, @titulo, @mensaje, @tipoUsuario, NULL, 0, GETDATE())
+          END
+        `)
+    }
+  } catch (error) {
+    console.error("Error al crear notificación:", error)
+  }
+}
+
 export async function GET() {
   try {
     const pool = await getConnection()
@@ -53,6 +107,12 @@ export async function POST(request: Request) {
         VALUES (@categoriaID, @nombreProducto, @descripcion, @precioVenta, @stockActual, @stockMinimo, @unidadMedida, @estado, GETDATE())
       `)
 
+    await crearNotificacionStockBajo(pool, {
+      NombreProducto: nombreProducto,
+      StockActual: Number.parseInt(stockActual),
+      StockMinimo: Number.parseInt(stockMinimo),
+    })
+
     return NextResponse.json({ success: true, message: "Producto creado exitosamente" })
   } catch (error) {
     console.error("Error al crear producto:", error)
@@ -95,6 +155,12 @@ export async function PUT(request: Request) {
             UnidadMedida = @unidadMedida, Estado = @estado
         WHERE ProductoID = @productoID
       `)
+
+    await crearNotificacionStockBajo(pool, {
+      NombreProducto: nombreProducto,
+      StockActual: Number.parseInt(stockActual),
+      StockMinimo: Number.parseInt(stockMinimo),
+    })
 
     return NextResponse.json({ success: true, message: "Producto actualizado exitosamente" })
   } catch (error) {

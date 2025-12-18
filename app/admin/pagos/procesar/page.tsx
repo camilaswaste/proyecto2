@@ -1,3 +1,4 @@
+//admin/pagos/procesar/page.tsx
 "use client"
 
 import { useState, useEffect, Suspense } from "react"
