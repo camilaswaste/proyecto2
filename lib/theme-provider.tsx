@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useEffect, useState } from "react"
 
 type Theme = "light" | "dark"
@@ -32,24 +31,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!mounted) return
-
-    const root = document.documentElement
-    root.classList.remove("light", "dark")
-    root.classList.add(theme)
+    document.documentElement.classList.remove("light", "dark")
+    document.documentElement.classList.add(theme)
     localStorage.setItem("app-theme", theme)
   }, [theme, mounted])
 
   useEffect(() => {
     if (!mounted) return
-
-    const root = document.documentElement
     const fontSizes = {
       small: "90%",
       normal: "100%",
       large: "110%",
       xlarge: "120%",
     }
-    root.style.fontSize = fontSizes[fontSize]
+    document.documentElement.style.fontSize = fontSizes[fontSize]
     localStorage.setItem("app-font-size", fontSize)
   }, [fontSize, mounted])
 
@@ -61,11 +56,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setFontSizeState(size)
   }
 
-  if (!mounted) {
-    return <>{children}</>
-  }
-
-  return <ThemeContext.Provider value={{ theme, fontSize, toggleTheme, setFontSize }}>{children}</ThemeContext.Provider>
+  return (
+    <ThemeContext.Provider value={{ theme, fontSize, toggleTheme, setFontSize }}>
+      {children}
+    </ThemeContext.Provider>
+  )
 }
 
 export function useTheme() {
